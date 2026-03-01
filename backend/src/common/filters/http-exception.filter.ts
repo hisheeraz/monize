@@ -7,6 +7,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { Response } from "express";
+import { QueryFailedError } from "typeorm";
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -39,6 +40,19 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       } else {
         message = exception.message;
       }
+    } else if (exception instanceof QueryFailedError) {
+      const driverError = exception.driverError as { code?: string };
+      if (driverError?.code === "23505") {
+        status = HttpStatus.CONFLICT;
+        message = "A record with this value already exists";
+      } else if (driverError?.code === "23503") {
+        status = HttpStatus.BAD_REQUEST;
+        message = "Referenced record does not exist or cannot be removed";
+      } else {
+        status = HttpStatus.INTERNAL_SERVER_ERROR;
+        message = "Internal server error";
+      }
+      this.logger.error("Database error", exception.stack);
     } else {
       status = HttpStatus.INTERNAL_SERVER_ERROR;
       message = "Internal server error";

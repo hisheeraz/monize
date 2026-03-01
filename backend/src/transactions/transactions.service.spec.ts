@@ -1,7 +1,7 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import { NotFoundException, BadRequestException } from "@nestjs/common";
-import { DataSource } from "typeorm";
+import { Brackets, DataSource } from "typeorm";
 import { TransactionsService } from "./transactions.service";
 import { Transaction, TransactionStatus } from "./entities/transaction.entity";
 import { TransactionSplit } from "./entities/transaction-split.entity";
@@ -891,19 +891,35 @@ describe("TransactionsService", () => {
 
   describe("findAll", () => {
     const createMockQueryBuilder = (overrides?: Record<string, jest.Mock>) => {
-      const mockQb: Record<string, jest.Mock> = {
-        leftJoinAndSelect: jest.fn().mockReturnThis(),
-        leftJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        addOrderBy: jest.fn().mockReturnThis(),
-        skip: jest.fn().mockReturnThis(),
-        take: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        groupBy: jest.fn().mockReturnThis(),
-        setParameter: jest.fn().mockReturnThis(),
+      const mockQb: Record<string, jest.Mock> = {} as Record<string, jest.Mock>;
+      const executeBrackets = (condition: unknown) => {
+        if (condition instanceof Brackets) {
+          (condition as any).whereFactory(mockQb);
+        }
+      };
+      Object.assign(mockQb, {
+        leftJoinAndSelect: jest.fn().mockReturnValue(mockQb),
+        leftJoin: jest.fn().mockReturnValue(mockQb),
+        where: jest.fn().mockImplementation((condition: unknown) => {
+          executeBrackets(condition);
+          return mockQb;
+        }),
+        andWhere: jest.fn().mockImplementation((condition: unknown) => {
+          executeBrackets(condition);
+          return mockQb;
+        }),
+        orWhere: jest.fn().mockImplementation((condition: unknown) => {
+          executeBrackets(condition);
+          return mockQb;
+        }),
+        orderBy: jest.fn().mockReturnValue(mockQb),
+        addOrderBy: jest.fn().mockReturnValue(mockQb),
+        skip: jest.fn().mockReturnValue(mockQb),
+        take: jest.fn().mockReturnValue(mockQb),
+        select: jest.fn().mockReturnValue(mockQb),
+        addSelect: jest.fn().mockReturnValue(mockQb),
+        groupBy: jest.fn().mockReturnValue(mockQb),
+        setParameter: jest.fn().mockReturnValue(mockQb),
         getMany: jest.fn().mockResolvedValue([]),
         getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
         getCount: jest.fn().mockResolvedValue(0),
@@ -911,12 +927,12 @@ describe("TransactionsService", () => {
         getRawOne: jest.fn().mockResolvedValue(null),
         getQuery: jest.fn().mockReturnValue("SELECT 1"),
         getParameters: jest.fn().mockReturnValue({}),
-        limit: jest.fn().mockReturnThis(),
-        update: jest.fn().mockReturnThis(),
-        set: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnValue(mockQb),
+        update: jest.fn().mockReturnValue(mockQb),
+        set: jest.fn().mockReturnValue(mockQb),
         execute: jest.fn().mockResolvedValue({ affected: 0 }),
         ...overrides,
-      };
+      });
       return mockQb;
     };
 
@@ -1050,9 +1066,12 @@ describe("TransactionsService", () => {
       ]);
 
       expect(categoriesRepository.find).toHaveBeenCalled();
-      expect(mockQb.setParameter).toHaveBeenCalledWith(
-        "filterCategoryIds",
-        expect.arrayContaining(["cat-1", "cat-1-child"]),
+      // Category IDs are now passed inline via Brackets
+      expect(mockQb.where).toHaveBeenCalledWith(
+        "transaction.categoryId IN (:...filterCategoryIds)",
+        {
+          filterCategoryIds: expect.arrayContaining(["cat-1", "cat-1-child"]),
+        },
       );
     });
 
@@ -1075,8 +1094,10 @@ describe("TransactionsService", () => {
         "transaction.splits",
         "filterSplits",
       );
-      expect(mockQb.andWhere).toHaveBeenCalledWith(
+      // filterSplits reference is now inside a Brackets callback
+      expect(mockQb.orWhere).toHaveBeenCalledWith(
         expect.stringContaining("filterSplits.categoryId"),
+        expect.anything(),
       );
     });
 
@@ -1090,7 +1111,9 @@ describe("TransactionsService", () => {
         "uncategorized",
       ]);
 
-      expect(mockQb.andWhere).toHaveBeenCalledWith(
+      // Uncategorized condition is now inside a Brackets callback
+      expect(mockQb.andWhere).toHaveBeenCalledWith(expect.any(Brackets));
+      expect(mockQb.where).toHaveBeenCalledWith(
         expect.stringContaining("transaction.categoryId IS NULL"),
       );
     });
@@ -1105,8 +1128,10 @@ describe("TransactionsService", () => {
         "transfer",
       ]);
 
-      expect(mockQb.andWhere).toHaveBeenCalledWith(
-        expect.stringContaining("transaction.isTransfer = true"),
+      // Transfer condition is now inside a Brackets callback
+      expect(mockQb.andWhere).toHaveBeenCalledWith(expect.any(Brackets));
+      expect(mockQb.where).toHaveBeenCalledWith(
+        "transaction.isTransfer = true",
       );
     });
 
@@ -1125,9 +1150,13 @@ describe("TransactionsService", () => {
         "cat-1",
       ]);
 
-      // Should have a combined OR condition containing all three
-      expect(mockQb.andWhere).toHaveBeenCalledWith(
-        expect.stringContaining(" OR "),
+      // All three conditions are combined via Brackets
+      expect(mockQb.andWhere).toHaveBeenCalledWith(expect.any(Brackets));
+      expect(mockQb.where).toHaveBeenCalledWith(
+        expect.stringContaining("transaction.categoryId IS NULL"),
+      );
+      expect(mockQb.orWhere).toHaveBeenCalledWith(
+        "transaction.isTransfer = true",
       );
     });
 
@@ -1864,19 +1893,35 @@ describe("TransactionsService", () => {
 
   describe("getSummary", () => {
     const createMockQueryBuilder = (overrides?: Record<string, jest.Mock>) => {
-      const mockQb: Record<string, jest.Mock> = {
-        leftJoinAndSelect: jest.fn().mockReturnThis(),
-        leftJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        addOrderBy: jest.fn().mockReturnThis(),
-        skip: jest.fn().mockReturnThis(),
-        take: jest.fn().mockReturnThis(),
-        select: jest.fn().mockReturnThis(),
-        addSelect: jest.fn().mockReturnThis(),
-        groupBy: jest.fn().mockReturnThis(),
-        setParameter: jest.fn().mockReturnThis(),
+      const mockQb: Record<string, jest.Mock> = {} as Record<string, jest.Mock>;
+      const executeBrackets = (condition: unknown) => {
+        if (condition instanceof Brackets) {
+          (condition as any).whereFactory(mockQb);
+        }
+      };
+      Object.assign(mockQb, {
+        leftJoinAndSelect: jest.fn().mockReturnValue(mockQb),
+        leftJoin: jest.fn().mockReturnValue(mockQb),
+        where: jest.fn().mockImplementation((condition: unknown) => {
+          executeBrackets(condition);
+          return mockQb;
+        }),
+        andWhere: jest.fn().mockImplementation((condition: unknown) => {
+          executeBrackets(condition);
+          return mockQb;
+        }),
+        orWhere: jest.fn().mockImplementation((condition: unknown) => {
+          executeBrackets(condition);
+          return mockQb;
+        }),
+        orderBy: jest.fn().mockReturnValue(mockQb),
+        addOrderBy: jest.fn().mockReturnValue(mockQb),
+        skip: jest.fn().mockReturnValue(mockQb),
+        take: jest.fn().mockReturnValue(mockQb),
+        select: jest.fn().mockReturnValue(mockQb),
+        addSelect: jest.fn().mockReturnValue(mockQb),
+        groupBy: jest.fn().mockReturnValue(mockQb),
+        setParameter: jest.fn().mockReturnValue(mockQb),
         getMany: jest.fn().mockResolvedValue([]),
         getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
         getCount: jest.fn().mockResolvedValue(0),
@@ -1884,12 +1929,12 @@ describe("TransactionsService", () => {
         getRawOne: jest.fn().mockResolvedValue(null),
         getQuery: jest.fn().mockReturnValue("SELECT 1"),
         getParameters: jest.fn().mockReturnValue({}),
-        limit: jest.fn().mockReturnThis(),
-        update: jest.fn().mockReturnThis(),
-        set: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnValue(mockQb),
+        update: jest.fn().mockReturnValue(mockQb),
+        set: jest.fn().mockReturnValue(mockQb),
         execute: jest.fn().mockResolvedValue({ affected: 0 }),
         ...overrides,
-      };
+      });
       return mockQb;
     };
 
@@ -1988,7 +2033,9 @@ describe("TransactionsService", () => {
         "transaction.account",
         "summaryAccount",
       );
-      expect(mockQb.andWhere).toHaveBeenCalledWith(
+      // Uncategorized condition is now inside a Brackets callback
+      expect(mockQb.andWhere).toHaveBeenCalledWith(expect.any(Brackets));
+      expect(mockQb.where).toHaveBeenCalledWith(
         expect.stringContaining("transaction.categoryId IS NULL"),
       );
     });
@@ -2002,8 +2049,10 @@ describe("TransactionsService", () => {
         "transfer",
       ]);
 
-      expect(mockQb.andWhere).toHaveBeenCalledWith(
-        expect.stringContaining("transaction.isTransfer = true"),
+      // Transfer condition is now inside a Brackets callback
+      expect(mockQb.andWhere).toHaveBeenCalledWith(expect.any(Brackets));
+      expect(mockQb.where).toHaveBeenCalledWith(
+        "transaction.isTransfer = true",
       );
     });
 
@@ -2024,9 +2073,12 @@ describe("TransactionsService", () => {
         "transaction.splits",
         "splits",
       );
-      expect(mockQb.setParameter).toHaveBeenCalledWith(
-        "summaryCategoryIds",
-        expect.arrayContaining(["cat-1", "cat-child"]),
+      // Category IDs are now passed inline via Brackets
+      expect(mockQb.where).toHaveBeenCalledWith(
+        "transaction.categoryId IN (:...summaryCategoryIds)",
+        {
+          summaryCategoryIds: expect.arrayContaining(["cat-1", "cat-child"]),
+        },
       );
     });
 

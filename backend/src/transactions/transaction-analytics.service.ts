@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { Brackets, Repository } from "typeorm";
 import { Transaction } from "./entities/transaction.entity";
 import { Category } from "../categories/entities/category.entity";
 import { getAllCategoryIdsWithChildren } from "../common/category-tree.util";
@@ -90,37 +90,55 @@ export class TransactionAnalyticsService {
         (id) => id !== "uncategorized" && id !== "transfer",
       );
 
-      const conditions: string[] = [];
+      let hasCondition = false;
 
-      if (hasUncategorized) {
-        conditions.push(
-          "(transaction.categoryId IS NULL AND transaction.isSplit = false AND transaction.isTransfer = false AND summaryAccount.accountType != 'INVESTMENT')",
-        );
-      }
-
-      if (hasTransfer) {
-        conditions.push("transaction.isTransfer = true");
-      }
-
-      if (regularCategoryIds.length > 0) {
-        const uniqueCategoryIds = await getAllCategoryIdsWithChildren(
-          this.categoriesRepository,
-          userId,
-          regularCategoryIds,
-        );
+      if (hasUncategorized || hasTransfer || regularCategoryIds.length > 0) {
+        const uniqueCategoryIds =
+          regularCategoryIds.length > 0
+            ? await getAllCategoryIdsWithChildren(
+                this.categoriesRepository,
+                userId,
+                regularCategoryIds,
+              )
+            : [];
 
         if (uniqueCategoryIds.length > 0) {
           queryBuilder.leftJoin("transaction.splits", "splits");
           splitsCategoryJoin = true;
-          conditions.push(
-            "(transaction.categoryId IN (:...summaryCategoryIds) OR splits.categoryId IN (:...summaryCategoryIds))",
-          );
-          queryBuilder.setParameter("summaryCategoryIds", uniqueCategoryIds);
         }
-      }
 
-      if (conditions.length > 0) {
-        queryBuilder.andWhere(`(${conditions.join(" OR ")})`);
+        queryBuilder.andWhere(
+          new Brackets((qb) => {
+            if (hasUncategorized) {
+              const method = hasCondition ? "orWhere" : "where";
+              hasCondition = true;
+              qb[method](
+                "transaction.categoryId IS NULL AND transaction.isSplit = false AND transaction.isTransfer = false AND summaryAccount.accountType != 'INVESTMENT'",
+              );
+            }
+            if (hasTransfer) {
+              const method = hasCondition ? "orWhere" : "where";
+              hasCondition = true;
+              qb[method]("transaction.isTransfer = true");
+            }
+            if (uniqueCategoryIds.length > 0) {
+              const method = hasCondition ? "orWhere" : "where";
+              hasCondition = true;
+              qb[method](
+                new Brackets((inner) => {
+                  inner
+                    .where(
+                      "transaction.categoryId IN (:...summaryCategoryIds)",
+                      { summaryCategoryIds: uniqueCategoryIds },
+                    )
+                    .orWhere("splits.categoryId IN (:...summaryCategoryIds)", {
+                      summaryCategoryIds: uniqueCategoryIds,
+                    });
+                }),
+              );
+            }
+          }),
+        );
       }
     }
 
@@ -260,37 +278,55 @@ export class TransactionAnalyticsService {
         (id) => id !== "uncategorized" && id !== "transfer",
       );
 
-      const conditions: string[] = [];
+      let hasCondition = false;
 
-      if (hasUncategorized) {
-        conditions.push(
-          "(transaction.categoryId IS NULL AND transaction.isSplit = false AND transaction.isTransfer = false AND summaryAccount.accountType != 'INVESTMENT')",
-        );
-      }
-
-      if (hasTransfer) {
-        conditions.push("transaction.isTransfer = true");
-      }
-
-      if (regularCategoryIds.length > 0) {
-        const uniqueCategoryIds = await getAllCategoryIdsWithChildren(
-          this.categoriesRepository,
-          userId,
-          regularCategoryIds,
-        );
+      if (hasUncategorized || hasTransfer || regularCategoryIds.length > 0) {
+        const uniqueCategoryIds =
+          regularCategoryIds.length > 0
+            ? await getAllCategoryIdsWithChildren(
+                this.categoriesRepository,
+                userId,
+                regularCategoryIds,
+              )
+            : [];
 
         if (uniqueCategoryIds.length > 0) {
           queryBuilder.leftJoin("transaction.splits", "splits");
           splitsCategoryJoin = true;
-          conditions.push(
-            "(transaction.categoryId IN (:...monthlyCategoryIds) OR splits.categoryId IN (:...monthlyCategoryIds))",
-          );
-          queryBuilder.setParameter("monthlyCategoryIds", uniqueCategoryIds);
         }
-      }
 
-      if (conditions.length > 0) {
-        queryBuilder.andWhere(`(${conditions.join(" OR ")})`);
+        queryBuilder.andWhere(
+          new Brackets((qb) => {
+            if (hasUncategorized) {
+              const method = hasCondition ? "orWhere" : "where";
+              hasCondition = true;
+              qb[method](
+                "transaction.categoryId IS NULL AND transaction.isSplit = false AND transaction.isTransfer = false AND summaryAccount.accountType != 'INVESTMENT'",
+              );
+            }
+            if (hasTransfer) {
+              const method = hasCondition ? "orWhere" : "where";
+              hasCondition = true;
+              qb[method]("transaction.isTransfer = true");
+            }
+            if (uniqueCategoryIds.length > 0) {
+              const method = hasCondition ? "orWhere" : "where";
+              hasCondition = true;
+              qb[method](
+                new Brackets((inner) => {
+                  inner
+                    .where(
+                      "transaction.categoryId IN (:...monthlyCategoryIds)",
+                      { monthlyCategoryIds: uniqueCategoryIds },
+                    )
+                    .orWhere("splits.categoryId IN (:...monthlyCategoryIds)", {
+                      monthlyCategoryIds: uniqueCategoryIds,
+                    });
+                }),
+              );
+            }
+          }),
+        );
       }
     }
 

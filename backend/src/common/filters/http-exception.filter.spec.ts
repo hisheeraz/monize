@@ -5,6 +5,7 @@ import {
   NotFoundException,
   ForbiddenException,
 } from "@nestjs/common";
+import { QueryFailedError } from "typeorm";
 import { GlobalExceptionFilter } from "./http-exception.filter";
 
 describe("GlobalExceptionFilter", () => {
@@ -152,5 +153,80 @@ describe("GlobalExceptionFilter", () => {
         message: "Internal server error",
       }),
     );
+  });
+
+  describe("QueryFailedError handling", () => {
+    function createQueryFailedError(pgCode: string, detail: string) {
+      const driverError = Object.assign(new Error(detail), { code: pgCode });
+      return new QueryFailedError("SELECT 1", [], driverError as any);
+    }
+
+    it("returns 409 Conflict for unique constraint violations (PG 23505)", () => {
+      const exception = createQueryFailedError(
+        "23505",
+        'duplicate key value violates unique constraint "uq_accounts_name"',
+      );
+
+      filter.catch(exception, mockHost);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+      expect(mockResponse.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: HttpStatus.CONFLICT,
+          message: "A record with this value already exists",
+        }),
+      );
+    });
+
+    it("returns 400 Bad Request for foreign key violations (PG 23503)", () => {
+      const exception = createQueryFailedError(
+        "23503",
+        'insert or update on table "transactions" violates foreign key constraint "fk_category"',
+      );
+
+      filter.catch(exception, mockHost);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
+      expect(mockResponse.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: HttpStatus.BAD_REQUEST,
+          message: "Referenced record does not exist or cannot be removed",
+        }),
+      );
+    });
+
+    it("returns 500 for other database errors", () => {
+      const exception = createQueryFailedError(
+        "42P01",
+        'relation "nonexistent_table" does not exist',
+      );
+
+      filter.catch(exception, mockHost);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+      expect(mockResponse.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+          message: "Internal server error",
+        }),
+      );
+    });
+
+    it("never exposes constraint or column names in the response", () => {
+      const exception = createQueryFailedError(
+        "23505",
+        'duplicate key value violates unique constraint "uq_accounts_name" DETAIL: Key (name)=(Checking) already exists',
+      );
+
+      filter.catch(exception, mockHost);
+
+      const jsonCall = mockResponse.json.mock.calls[0][0];
+      const serialized = JSON.stringify(jsonCall);
+      expect(serialized).not.toContain("uq_accounts_name");
+      expect(serialized).not.toContain("constraint");
+      expect(serialized).not.toContain("DETAIL");
+    });
   });
 });

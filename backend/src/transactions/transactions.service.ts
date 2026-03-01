@@ -6,7 +6,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, In, DataSource, QueryRunner } from "typeorm";
+import { Brackets, Repository, In, DataSource, QueryRunner } from "typeorm";
 import { Transaction, TransactionStatus } from "./entities/transaction.entity";
 import { TransactionSplit } from "./entities/transaction-split.entity";
 import { Category } from "../categories/entities/category.entity";
@@ -325,38 +325,56 @@ export class TransactionsService {
       (id) => id !== "uncategorized" && id !== "transfer",
     );
 
-    const conditions: string[] = [];
+    let hasCondition = false;
 
-    if (hasUncategorized) {
-      conditions.push(
-        "(transaction.categoryId IS NULL AND transaction.isSplit = false AND transaction.isTransfer = false AND account.accountType != 'INVESTMENT')",
-      );
-    }
-
-    if (hasTransfer) {
-      conditions.push("transaction.isTransfer = true");
-    }
-
-    if (regularCategoryIds.length > 0) {
-      const uniqueCategoryIds = await getAllCategoryIdsWithChildren(
-        this.categoriesRepository,
-        userId,
-        regularCategoryIds,
-      );
+    if (hasUncategorized || hasTransfer || regularCategoryIds.length > 0) {
+      const uniqueCategoryIds =
+        regularCategoryIds.length > 0
+          ? await getAllCategoryIdsWithChildren(
+              this.categoriesRepository,
+              userId,
+              regularCategoryIds,
+            )
+          : [];
 
       if (uniqueCategoryIds.length > 0) {
         // Use a separate join alias for filtering so the main "splits" join
         // (leftJoinAndSelect) still loads ALL splits for display purposes.
         queryBuilder.leftJoin("transaction.splits", "filterSplits");
-        conditions.push(
-          "(transaction.categoryId IN (:...filterCategoryIds) OR filterSplits.categoryId IN (:...filterCategoryIds))",
-        );
-        queryBuilder.setParameter("filterCategoryIds", uniqueCategoryIds);
       }
-    }
 
-    if (conditions.length > 0) {
-      queryBuilder.andWhere(`(${conditions.join(" OR ")})`);
+      queryBuilder.andWhere(
+        new Brackets((qb) => {
+          if (hasUncategorized) {
+            const method = hasCondition ? "orWhere" : "where";
+            hasCondition = true;
+            qb[method](
+              "transaction.categoryId IS NULL AND transaction.isSplit = false AND transaction.isTransfer = false AND account.accountType != 'INVESTMENT'",
+            );
+          }
+          if (hasTransfer) {
+            const method = hasCondition ? "orWhere" : "where";
+            hasCondition = true;
+            qb[method]("transaction.isTransfer = true");
+          }
+          if (uniqueCategoryIds.length > 0) {
+            const method = hasCondition ? "orWhere" : "where";
+            hasCondition = true;
+            qb[method](
+              new Brackets((inner) => {
+                inner
+                  .where("transaction.categoryId IN (:...filterCategoryIds)", {
+                    filterCategoryIds: uniqueCategoryIds,
+                  })
+                  .orWhere(
+                    "filterSplits.categoryId IN (:...filterCategoryIds)",
+                    { filterCategoryIds: uniqueCategoryIds },
+                  );
+              }),
+            );
+          }
+        }),
+      );
     }
   }
 

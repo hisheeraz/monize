@@ -1,5 +1,6 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
+import { Brackets } from "typeorm";
 import { TransactionAnalyticsService } from "./transaction-analytics.service";
 import { Transaction } from "./entities/transaction.entity";
 import { Category } from "../categories/entities/category.entity";
@@ -14,17 +15,33 @@ describe("TransactionAnalyticsService", () => {
   let mockQueryBuilder: Record<string, jest.Mock>;
 
   beforeEach(async () => {
-    mockQueryBuilder = {
-      select: jest.fn().mockReturnThis(),
-      addSelect: jest.fn().mockReturnThis(),
-      where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockReturnThis(),
-      leftJoin: jest.fn().mockReturnThis(),
-      groupBy: jest.fn().mockReturnThis(),
-      orderBy: jest.fn().mockReturnThis(),
-      setParameter: jest.fn().mockReturnThis(),
-      getRawMany: jest.fn().mockResolvedValue([]),
+    mockQueryBuilder = {} as Record<string, jest.Mock>;
+    const executeBrackets = (condition: unknown) => {
+      if (condition instanceof Brackets) {
+        (condition as any).whereFactory(mockQueryBuilder);
+      }
     };
+    Object.assign(mockQueryBuilder, {
+      select: jest.fn().mockReturnValue(mockQueryBuilder),
+      addSelect: jest.fn().mockReturnValue(mockQueryBuilder),
+      where: jest.fn().mockImplementation((condition: unknown) => {
+        executeBrackets(condition);
+        return mockQueryBuilder;
+      }),
+      andWhere: jest.fn().mockImplementation((condition: unknown) => {
+        executeBrackets(condition);
+        return mockQueryBuilder;
+      }),
+      orWhere: jest.fn().mockImplementation((condition: unknown) => {
+        executeBrackets(condition);
+        return mockQueryBuilder;
+      }),
+      leftJoin: jest.fn().mockReturnValue(mockQueryBuilder),
+      groupBy: jest.fn().mockReturnValue(mockQueryBuilder),
+      orderBy: jest.fn().mockReturnValue(mockQueryBuilder),
+      setParameter: jest.fn().mockReturnValue(mockQueryBuilder),
+      getRawMany: jest.fn().mockResolvedValue([]),
+    });
 
     transactionsRepository = {
       createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
@@ -373,10 +390,16 @@ describe("TransactionAnalyticsService", () => {
           select: ["id", "parentId"],
         });
 
-        // Should set parameter with parent + all descendants
-        expect(mockQueryBuilder.setParameter).toHaveBeenCalledWith(
-          "summaryCategoryIds",
-          expect.arrayContaining(["cat-1", "cat-1-child", "cat-1-grandchild"]),
+        // Should pass category IDs inline via Brackets
+        expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+          "transaction.categoryId IN (:...summaryCategoryIds)",
+          {
+            summaryCategoryIds: expect.arrayContaining([
+              "cat-1",
+              "cat-1-child",
+              "cat-1-grandchild",
+            ]),
+          },
         );
 
         // Should join splits for category matching
@@ -396,7 +419,11 @@ describe("TransactionAnalyticsService", () => {
           "summaryAccount",
         );
 
+        // Uncategorized condition is now inside a Brackets callback
         expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+          expect.any(Brackets),
+        );
+        expect(mockQueryBuilder.where).toHaveBeenCalledWith(
           expect.stringContaining("transaction.categoryId IS NULL"),
         );
       });
@@ -406,8 +433,12 @@ describe("TransactionAnalyticsService", () => {
           "transfer",
         ]);
 
+        // Transfer condition is now inside a Brackets callback
         expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-          expect.stringContaining("transaction.isTransfer = true"),
+          expect.any(Brackets),
+        );
+        expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+          "transaction.isTransfer = true",
         );
       });
 
@@ -422,15 +453,17 @@ describe("TransactionAnalyticsService", () => {
           "cat-1",
         ]);
 
-        // All three conditions should be OR-ed together
+        // All three conditions should be OR-ed together via Brackets
         expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-          expect.stringContaining(" OR "),
+          expect.any(Brackets),
         );
-
-        // Account join for uncategorized
-        expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
-          "transaction.account",
-          "summaryAccount",
+        // Uncategorized is the first condition (uses where)
+        expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+          expect.stringContaining("transaction.categoryId IS NULL"),
+        );
+        // Transfer and category conditions use orWhere
+        expect(mockQueryBuilder.orWhere).toHaveBeenCalledWith(
+          "transaction.isTransfer = true",
         );
 
         // Splits join for regular categories
@@ -521,11 +554,15 @@ describe("TransactionAnalyticsService", () => {
           "cat-child",
         ]);
 
-        const setParameterCall = mockQueryBuilder.setParameter.mock.calls.find(
-          (call: unknown[]) => call[0] === "summaryCategoryIds",
+        // Find the where call that passes summaryCategoryIds inline
+        const whereCall = mockQueryBuilder.where.mock.calls.find(
+          (call: unknown[]) =>
+            typeof call[0] === "string" &&
+            (call[0] as string).includes("summaryCategoryIds"),
         );
-        expect(setParameterCall).toBeDefined();
-        const ids = setParameterCall[1] as string[];
+        expect(whereCall).toBeDefined();
+        const ids = (whereCall[1] as { summaryCategoryIds: string[] })
+          .summaryCategoryIds;
         // Should be deduplicated (cat-child appears only once)
         const uniqueIds = [...new Set(ids)];
         expect(ids.length).toBe(uniqueIds.length);
@@ -754,9 +791,9 @@ describe("TransactionAnalyticsService", () => {
           "cat-1",
         ]);
 
-        expect(mockQueryBuilder.setParameter).toHaveBeenCalledWith(
-          "summaryCategoryIds",
-          ["cat-1"],
+        expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+          "transaction.categoryId IN (:...summaryCategoryIds)",
+          { summaryCategoryIds: ["cat-1"] },
         );
       });
 
@@ -773,15 +810,17 @@ describe("TransactionAnalyticsService", () => {
           "root",
         ]);
 
-        expect(mockQueryBuilder.setParameter).toHaveBeenCalledWith(
-          "summaryCategoryIds",
-          expect.arrayContaining([
-            "root",
-            "child-1",
-            "child-2",
-            "grandchild-1",
-            "great-grandchild",
-          ]),
+        expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+          "transaction.categoryId IN (:...summaryCategoryIds)",
+          {
+            summaryCategoryIds: expect.arrayContaining([
+              "root",
+              "child-1",
+              "child-2",
+              "grandchild-1",
+              "great-grandchild",
+            ]),
+          },
         );
       });
 
@@ -798,14 +837,16 @@ describe("TransactionAnalyticsService", () => {
           "cat-b",
         ]);
 
-        expect(mockQueryBuilder.setParameter).toHaveBeenCalledWith(
-          "summaryCategoryIds",
-          expect.arrayContaining([
-            "cat-a",
-            "cat-a-child",
-            "cat-b",
-            "cat-b-child",
-          ]),
+        expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+          "transaction.categoryId IN (:...summaryCategoryIds)",
+          {
+            summaryCategoryIds: expect.arrayContaining([
+              "cat-a",
+              "cat-a-child",
+              "cat-b",
+              "cat-b-child",
+            ]),
+          },
         );
       });
 
@@ -821,10 +862,13 @@ describe("TransactionAnalyticsService", () => {
           "cat-1",
         ]);
 
-        const setParameterCall = mockQueryBuilder.setParameter.mock.calls.find(
-          (call: unknown[]) => call[0] === "summaryCategoryIds",
+        const whereCall = mockQueryBuilder.where.mock.calls.find(
+          (call: unknown[]) =>
+            typeof call[0] === "string" &&
+            (call[0] as string).includes("summaryCategoryIds"),
         );
-        const ids = setParameterCall[1] as string[];
+        const ids = (whereCall[1] as { summaryCategoryIds: string[] })
+          .summaryCategoryIds;
         expect(ids).toContain("cat-1");
         expect(ids).toContain("cat-1-child");
         expect(ids).not.toContain("cat-2");
@@ -964,9 +1008,11 @@ describe("TransactionAnalyticsService", () => {
         "cat-1",
       ]);
 
-      expect(mockQueryBuilder.setParameter).toHaveBeenCalledWith(
-        "monthlyCategoryIds",
-        expect.arrayContaining(["cat-1", "cat-child"]),
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        "transaction.categoryId IN (:...monthlyCategoryIds)",
+        {
+          monthlyCategoryIds: expect.arrayContaining(["cat-1", "cat-child"]),
+        },
       );
     });
 
