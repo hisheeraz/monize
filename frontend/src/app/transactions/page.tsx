@@ -37,7 +37,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { createLogger } from '@/lib/logger';
-import { getErrorMessage } from '@/lib/errors';
+import { showErrorToast } from '@/lib/errors';
 import { PAGE_SIZE } from '@/lib/constants';
 import { budgetsApi } from '@/lib/budgets';
 import { CategoryBudgetStatus } from '@/types/budget';
@@ -99,7 +99,7 @@ function TransactionsContent() {
       setPayees(payeesData);
       staticDataLoaded.current = true;
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to load form data'));
+      showErrorToast(error, 'Failed to load form data');
       logger.error(error);
     }
   }, []);
@@ -180,7 +180,7 @@ function TransactionsContent() {
         budgetsApi.getCategoryBudgetStatus(categoryIds).then(setBudgetStatusMap).catch(() => {});
       }
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to load transactions'));
+      showErrorToast(error, 'Failed to load transactions');
       logger.error(error);
     } finally {
       setIsLoading(false);
@@ -281,7 +281,7 @@ function TransactionsContent() {
       setEditingPayee(payee);
       setShowPayeeForm(true);
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to load payee details'));
+      showErrorToast(error, 'Failed to load payee details');
       logger.error(error);
     }
   };
@@ -300,7 +300,7 @@ function TransactionsContent() {
       setEditingPayee(undefined);
       setPayees(prev => prev.map(p => p.id === updated.id ? updated : p));
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to update payee'));
+      showErrorToast(error, 'Failed to update payee');
     }
   };
 

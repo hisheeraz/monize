@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { AxiosError } from 'axios';
 import { User } from '@/types/auth';
 import { clearAllCache } from '@/lib/apiCache';
 
@@ -88,10 +89,23 @@ export const useAuthStore = create<AuthState>()(
             authApi.getProfile().then((user: User) => {
               state.setUser(user);
               state.setHasHydrated(true);
-            }).catch(() => {
-              // Profile fetch failed (session expired) — log out
-              state.logout();
-              state.setHasHydrated(true);
+            }).catch((error: unknown) => {
+              const status = error instanceof AxiosError ? error.response?.status : undefined;
+              if (status === 502 || (error instanceof AxiosError && !error.response)) {
+                // Backend unreachable -- keep isAuthenticated from localStorage so the app
+                // shell renders with the BackendDownBanner visible. This is safe because:
+                // (a) all API calls fail with 502 during downtime (no data access)
+                // (b) window.location.reload() on recovery forces full re-auth via getProfile()
+                // (c) if JWT/refresh token expired, the 401 interceptor triggers logout
+                import('@/store/connectionStore').then(({ useConnectionStore }) => {
+                  useConnectionStore.getState().setBackendDown();
+                });
+                state.setHasHydrated(true);
+              } else {
+                // Genuine auth failure (401, etc.) — log out
+                state.logout();
+                state.setHasHydrated(true);
+              }
             });
           });
         } else {

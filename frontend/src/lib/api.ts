@@ -88,6 +88,13 @@ apiClient.interceptors.response.use(
       _authRetried?: boolean;
     };
 
+    // Handle 502 (backend unavailable) or network errors (no response at all)
+    if (error.response?.status === 502 || !error.response) {
+      const { useConnectionStore } = await import('@/store/connectionStore');
+      useConnectionStore.getState().setBackendDown();
+      return Promise.reject(error);
+    }
+
     // Handle 403 CSRF errors — attempt transparent refresh and retry
     if (
       error.response?.status === 403 &&

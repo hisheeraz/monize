@@ -135,6 +135,7 @@ vi.mock('@/lib/constants', () => ({
 
 vi.mock('@/lib/errors', () => ({
   getErrorMessage: (_error: any, fallback: string) => fallback,
+  showErrorToast: vi.fn(),
 }));
 
 // Mock budgets API (used for category budget status indicators)
@@ -427,23 +428,25 @@ describe('TransactionsPage', () => {
     });
 
     it('shows error toast when loading fails', async () => {
+      const { showErrorToast } = await import('@/lib/errors');
       mockGetAll.mockRejectedValue(new Error('Network error'));
       mockGetSummary.mockRejectedValue(new Error('Network error'));
 
       render(<TransactionsPage />);
 
       await waitFor(() => {
-        expect(toast.error).toHaveBeenCalledWith('Failed to load transactions');
+        expect(showErrorToast).toHaveBeenCalledWith(expect.any(Error), 'Failed to load transactions');
       });
     });
 
     it('shows error toast when static data loading fails', async () => {
+      const { showErrorToast } = await import('@/lib/errors');
       mockGetAllAccounts.mockRejectedValue(new Error('Error'));
 
       render(<TransactionsPage />);
 
       await waitFor(() => {
-        expect(toast.error).toHaveBeenCalledWith('Failed to load form data');
+        expect(showErrorToast).toHaveBeenCalledWith(expect.any(Error), 'Failed to load form data');
       });
     });
   });
@@ -728,8 +731,9 @@ describe('TransactionsPage', () => {
 
       fireEvent.click(screen.getByTestId('payee-click-btn'));
 
+      const { showErrorToast } = await import('@/lib/errors');
       await waitFor(() => {
-        expect(toast.error).toHaveBeenCalledWith('Failed to load payee details');
+        expect(showErrorToast).toHaveBeenCalledWith(expect.any(Error), 'Failed to load payee details');
       });
     });
   });

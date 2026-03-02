@@ -26,6 +26,7 @@ vi.mock('@/lib/logger', () => ({
 // Mock errors
 vi.mock('@/lib/errors', () => ({
   getErrorMessage: vi.fn((_e: any, fallback: string) => fallback),
+  showErrorToast: vi.fn(),
 }));
 
 // Mock auth store
@@ -303,10 +304,11 @@ describe('AccountsPage', () => {
   });
 
   it('handles API error gracefully', async () => {
+    const { showErrorToast } = await import('@/lib/errors');
     mockGetAll.mockRejectedValueOnce(new Error('Network error'));
     render(<AccountsPage />);
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Failed to load accounts');
+      expect(showErrorToast).toHaveBeenCalledWith(expect.any(Error), 'Failed to load accounts');
     });
   });
 

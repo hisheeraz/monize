@@ -26,6 +26,15 @@ vi.mock('@/lib/logger', () => ({
   }),
 }));
 
+const mockSetBackendDown = vi.fn();
+vi.mock('@/store/connectionStore', () => ({
+  useConnectionStore: {
+    getState: () => ({
+      setBackendDown: mockSetBackendDown,
+    }),
+  },
+}));
+
 describe('apiClient', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -210,6 +219,110 @@ describe('apiClient', () => {
       };
 
       await expect(errorHandler.rejected(mockError)).rejects.toEqual(mockError);
+    });
+
+    it('sets backend down on 502 response and rejects', async () => {
+      mockSetBackendDown.mockClear();
+      vi.resetModules();
+
+      vi.doMock('@/store/connectionStore', () => ({
+        useConnectionStore: {
+          getState: () => ({
+            setBackendDown: mockSetBackendDown,
+          }),
+        },
+      }));
+
+      const { apiClient: freshClient } = await import('@/lib/api');
+      const interceptors = freshClient.interceptors.response as any;
+      const handlers = interceptors.handlers;
+      const errorHandler = handlers.find((h: any) => h?.rejected);
+
+      const mockError = {
+        response: {
+          status: 502,
+          data: { error: 'Backend unavailable' },
+        },
+        config: {
+          headers: new AxiosHeaders(),
+        },
+      };
+
+      await expect(errorHandler.rejected(mockError)).rejects.toEqual(mockError);
+      expect(mockSetBackendDown).toHaveBeenCalled();
+    });
+
+    it('sets backend down on network error (no response) and rejects', async () => {
+      mockSetBackendDown.mockClear();
+      vi.resetModules();
+
+      vi.doMock('@/store/connectionStore', () => ({
+        useConnectionStore: {
+          getState: () => ({
+            setBackendDown: mockSetBackendDown,
+          }),
+        },
+      }));
+
+      const { apiClient: freshClient } = await import('@/lib/api');
+      const interceptors = freshClient.interceptors.response as any;
+      const handlers = interceptors.handlers;
+      const errorHandler = handlers.find((h: any) => h?.rejected);
+
+      const mockError = {
+        message: 'Network Error',
+        config: {
+          headers: new AxiosHeaders(),
+        },
+        // No response property -- network-level failure
+      };
+
+      await expect(errorHandler.rejected(mockError)).rejects.toEqual(mockError);
+      expect(mockSetBackendDown).toHaveBeenCalled();
+    });
+
+    it('does not attempt CSRF or token refresh on 502', async () => {
+      mockSetBackendDown.mockClear();
+      const axiosGetSpy = vi.spyOn(axios, 'get');
+      const axiosPostSpy = vi.spyOn(axios, 'post');
+
+      vi.resetModules();
+
+      vi.doMock('@/store/connectionStore', () => ({
+        useConnectionStore: {
+          getState: () => ({
+            setBackendDown: mockSetBackendDown,
+          }),
+        },
+      }));
+
+      const { apiClient: freshClient } = await import('@/lib/api');
+      const interceptors = freshClient.interceptors.response as any;
+      const handlers = interceptors.handlers;
+      const errorHandler = handlers.find((h: any) => h?.rejected);
+
+      const mockError = {
+        response: {
+          status: 502,
+          data: { error: 'Backend unavailable' },
+        },
+        config: {
+          headers: new AxiosHeaders(),
+        },
+      };
+
+      try {
+        await errorHandler.rejected(mockError);
+      } catch {
+        // Expected
+      }
+
+      // Should not have attempted CSRF refresh or token refresh
+      expect(axiosGetSpy).not.toHaveBeenCalledWith('/api/v1/auth/csrf-refresh', expect.anything());
+      expect(axiosPostSpy).not.toHaveBeenCalledWith('/api/v1/auth/refresh', expect.anything(), expect.anything());
+
+      axiosGetSpy.mockRestore();
+      axiosPostSpy.mockRestore();
     });
   });
 });

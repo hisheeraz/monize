@@ -14,6 +14,11 @@ vi.mock('./AppHeader', () => ({
   AppHeader: () => <div data-testid="app-header">AppHeader</div>,
 }));
 
+// Mock BackendDownBanner
+vi.mock('./BackendDownBanner', () => ({
+  BackendDownBanner: () => <div data-testid="backend-down-banner">BackendDownBanner</div>,
+}));
+
 // Mock SwipeIndicator
 vi.mock('./SwipeIndicator', () => ({
   SwipeIndicator: (props: any) => (
@@ -62,5 +67,17 @@ describe('SwipeShell', () => {
     const { container } = render(<SwipeShell><p>Content</p></SwipeShell>);
     const wrapper = container.firstChild as HTMLElement;
     expect(wrapper.className).toContain('overflow-x-hidden');
+  });
+
+  it('renders BackendDownBanner on app pages', () => {
+    mockPathname = '/dashboard';
+    render(<SwipeShell><p>Content</p></SwipeShell>);
+    expect(screen.getByTestId('backend-down-banner')).toBeInTheDocument();
+  });
+
+  it('renders BackendDownBanner on auth routes', () => {
+    mockPathname = '/login';
+    render(<SwipeShell><p>Login form</p></SwipeShell>);
+    expect(screen.getByTestId('backend-down-banner')).toBeInTheDocument();
   });
 });

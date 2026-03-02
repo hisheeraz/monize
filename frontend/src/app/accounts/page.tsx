@@ -22,7 +22,7 @@ import { useExchangeRates } from '@/hooks/useExchangeRates';
 import { useNumberFormat } from '@/hooks/useNumberFormat';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { createLogger } from '@/lib/logger';
-import { getErrorMessage } from '@/lib/errors';
+import { showErrorToast } from '@/lib/errors';
 
 const logger = createLogger('Accounts');
 
@@ -52,7 +52,7 @@ function AccountsContent() {
       setAccounts(data);
       setPortfolioSummary(portfolio);
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to load accounts'));
+      showErrorToast(error, 'Failed to load accounts');
       logger.error(error);
     } finally {
       setIsLoading(false);
@@ -99,7 +99,7 @@ function AccountsContent() {
       close();
       loadAccounts();
     } catch (error) {
-      toast.error(getErrorMessage(error, `Failed to ${editingItem ? 'update' : 'create'} account`));
+      showErrorToast(error, `Failed to ${editingItem ? 'update' : 'create'} account`);
       throw error;
     }
   };
