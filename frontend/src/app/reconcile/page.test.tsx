@@ -82,6 +82,7 @@ vi.mock('@/lib/transactions', () => ({
 
 vi.mock('@/lib/format', () => ({
   getCurrencySymbol: (code: string) => code === 'CAD' ? 'CA$' : '$',
+  getDecimalPlacesForCurrency: () => 2,
 }));
 
 vi.mock('@/lib/errors', () => ({

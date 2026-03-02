@@ -7,11 +7,13 @@ import toast from 'react-hot-toast';
 vi.mock('@/hooks/useNumberFormat', () => ({
   useNumberFormat: () => ({
     defaultCurrency: 'CAD',
+    formatCurrency: (n: number, _c?: string) => `$${n.toFixed(2)}`,
   }),
 }));
 
 vi.mock('@/lib/format', () => ({
   getCurrencySymbol: () => '$',
+  getDecimalPlacesForCurrency: () => 2,
   roundToCents: (v: number) => Math.round(v * 100) / 100,
   formatAmountWithCommas: (v: number) => v?.toLocaleString() ?? '',
   parseAmount: (v: string) => parseFloat(v) || 0,

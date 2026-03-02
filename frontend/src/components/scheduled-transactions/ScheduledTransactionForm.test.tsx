@@ -23,6 +23,7 @@ vi.mock('@hookform/resolvers/zod', () => ({
 
 vi.mock('@/lib/format', () => ({
   getCurrencySymbol: () => '$',
+  getDecimalPlacesForCurrency: () => 2,
   roundToCents: (v: number) => Math.round(v * 100) / 100,
   formatAmountWithCommas: (v: number) => v?.toLocaleString() ?? '',
   parseAmount: (v: string) => parseFloat(v) || 0,
