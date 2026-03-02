@@ -8,6 +8,8 @@ import type { GenerateBudgetResponse, ApplyBudgetCategoryData } from '@/types/bu
 vi.mock('@/lib/format', () => ({
   formatCurrency: vi.fn((amount: number) => `$${amount.toFixed(2)}`),
   getCurrencySymbol: vi.fn(() => '$'),
+  getDecimalPlacesForCurrency: vi.fn(() => 2),
+  formatAmount: vi.fn((v: number | undefined | null) => (v === undefined || v === null || isNaN(v)) ? '' : (Math.round(v * 100) / 100).toFixed(2)),
 }));
 
 describe('BudgetWizardCategories', () => {

@@ -87,11 +87,11 @@ describe("FinancialContextBuilder", () => {
 
       expect(result).toContain(QUERY_SYSTEM_PROMPT);
       expect(result).toContain("USER'S DEFAULT CURRENCY: USD");
-      expect(result).toContain("Checking (checking, USD, balance: 5000.00)");
+      expect(result).toContain("Checking (checking, USD, balance: 5,000.00)");
       expect(result).toContain(
-        "Credit Card (credit_card, USD, balance: -1200.50)",
+        "Credit Card (credit_card, USD, balance: -1,200.50)",
       );
-      expect(result).toContain("Savings (savings, CAD, balance: 15000.75)");
+      expect(result).toContain("Savings (savings, CAD, balance: 15,000.75)");
       expect(result).toContain("Food [Expense]");
       expect(result).toContain("Groceries [Expense]");
       expect(result).toContain("Dining Out [Expense]");

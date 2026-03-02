@@ -9,6 +9,7 @@ vi.mock('@/lib/format', () => ({
     const map: Record<string, string> = { CAD: '$', USD: 'US$', EUR: 'E' };
     return map[code] || '$';
   },
+  getDecimalPlacesForCurrency: () => 2,
 }));
 
 vi.mock('@/components/ui/Combobox', () => ({

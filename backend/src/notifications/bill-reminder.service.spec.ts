@@ -482,8 +482,7 @@ describe("BillReminderService", () => {
           await service.sendBillReminders();
 
           const htmlArg = emailService.sendMail.mock.calls[0][2];
-          expect(htmlArg).toContain("EUR");
-          expect(htmlArg).toContain("250.75");
+          expect(htmlArg).toContain("€250.75");
         });
 
         it("passes appUrl from config to email template", async () => {

@@ -6,6 +6,7 @@ import { Payee } from '@/types/payee';
 
 vi.mock('@/lib/format', () => ({
   getCurrencySymbol: (code: string) => (code === 'USD' ? 'US$' : '$'),
+  getDecimalPlacesForCurrency: () => 2,
 }));
 
 vi.mock('@/components/ui/Combobox', () => ({
