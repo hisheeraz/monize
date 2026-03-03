@@ -2534,6 +2534,8 @@ describe("AuthService", () => {
         backupCodes: savedUser.backupCodes,
       };
 
+      setupBackupCodeQueryRunner(savedUser.backupCodes);
+
       (jwtService.verify as jest.Mock).mockReturnValue({
         sub: "user-1",
         type: "2fa_pending",
