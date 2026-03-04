@@ -187,7 +187,7 @@ export class TransactionsController {
       parseIds(accountIds, accountId),
       startDate,
       endDate,
-      parseIds(categoryIds, categoryId),
+      parseCategoryIds(categoryIds ?? categoryId),
       parseIds(payeeIds, payeeId),
       page ? parseInt(page, 10) : undefined,
       limit ? parseInt(limit, 10) : undefined,
@@ -270,7 +270,7 @@ export class TransactionsController {
       parseIds(accountIds, accountId),
       startDate,
       endDate,
-      parseIds(categoryIds, categoryId),
+      parseCategoryIds(categoryIds ?? categoryId),
       parseIds(payeeIds, payeeId),
       search,
     );

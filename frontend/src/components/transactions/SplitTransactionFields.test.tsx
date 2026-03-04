@@ -188,7 +188,7 @@ describe('SplitTransactionFields', () => {
     expect(labels).not.toContain('Brokerage (CAD)');
   });
 
-  it('filters out closed accounts from the Account dropdown', () => {
+  it('filters out closed accounts from the Account dropdown unless currently selected', () => {
     const openAccount = createAccount({ id: 'acc-1', name: 'Open Account', isClosed: false });
     const closedAccount = createAccount({ id: 'acc-2', name: 'Closed Account', isClosed: true });
 
@@ -204,7 +204,25 @@ describe('SplitTransactionFields', () => {
     const labels = options.map(o => o.textContent);
 
     expect(labels).toContain('Open Account (CAD)');
-    expect(labels).not.toContain('Closed Account (CAD)');
+    expect(labels).not.toContain('Closed Account (CAD) (Closed)');
+  });
+
+  it('shows a closed account with (Closed) label when it is the currently selected account', () => {
+    const closedAccount = createAccount({ id: 'acc-closed', name: 'Closed Account', isClosed: true });
+
+    render(
+      <SplitTransactionFields
+        {...defaultProps}
+        accounts={[closedAccount]}
+        watchedAccountId="acc-closed"
+      />
+    );
+
+    const accountSelect = screen.getByLabelText('Account');
+    const options = Array.from(accountSelect.querySelectorAll('option'));
+    const labels = options.map(o => o.textContent);
+
+    expect(labels).toContain('Closed Account (CAD) (Closed)');
   });
 
   it('sorts accounts alphabetically in the dropdown', () => {

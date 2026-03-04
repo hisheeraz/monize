@@ -63,18 +63,21 @@ export function SplitEditor({
   // Memoize account options (excluding source account, asset accounts, investment accounts, and closed accounts, sorted alphabetically)
   const accountOptions = useMemo(() => {
     if (!supportsTransfers) return [];
+    const selectedTransferAccountIds = new Set(
+      splits.filter(s => s.splitType === 'transfer' && s.transferAccountId).map(s => s.transferAccountId!)
+    );
     return accounts
       .filter(a =>
-        !a.isClosed &&
         a.id !== sourceAccountId &&
-        a.accountSubType !== 'INVESTMENT_BROKERAGE'
+        a.accountSubType !== 'INVESTMENT_BROKERAGE' &&
+        (!a.isClosed || selectedTransferAccountIds.has(a.id))
       )
       .sort((a, b) => a.name.localeCompare(b.name))
       .map(a => ({
         value: a.id,
-        label: a.name,
+        label: `${a.name}${a.isClosed ? ' (Closed)' : ''}`,
       }));
-  }, [accounts, sourceAccountId, supportsTransfers]);
+  }, [accounts, sourceAccountId, supportsTransfers, splits]);
 
   // Sync with parent when splits prop changes
   useEffect(() => {

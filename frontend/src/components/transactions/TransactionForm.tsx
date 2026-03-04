@@ -257,7 +257,7 @@ export function TransactionForm({ transaction, defaultAccountId, onSuccess, onCa
   // Load accounts, categories, payees on mount
   useEffect(() => {
     Promise.all([
-      accountsApi.getAll(),
+      accountsApi.getAll(true),
       categoriesApi.getAll(),
       payeesApi.getAll(),
     ])

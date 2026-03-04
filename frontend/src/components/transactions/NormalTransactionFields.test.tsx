@@ -199,7 +199,7 @@ describe('NormalTransactionFields', () => {
     expect(optionLabels).not.toContain('Brokerage (CAD)');
   });
 
-  it('filters out closed accounts from the Account dropdown', () => {
+  it('filters out closed accounts from the Account dropdown unless currently selected', () => {
     const openAccount = createAccount({ id: 'acc-1', name: 'Open Account', isClosed: false });
     const closedAccount = createAccount({ id: 'acc-2', name: 'Closed Account', isClosed: true });
 
@@ -215,7 +215,25 @@ describe('NormalTransactionFields', () => {
     const optionLabels = options.map(o => o.textContent);
 
     expect(optionLabels).toContain('Open Account (CAD)');
-    expect(optionLabels).not.toContain('Closed Account (CAD)');
+    expect(optionLabels).not.toContain('Closed Account (CAD) (Closed)');
+  });
+
+  it('shows a closed account with (Closed) label when it is the currently selected account', () => {
+    const closedAccount = createAccount({ id: 'acc-closed', name: 'Closed Account', isClosed: true });
+
+    render(
+      <NormalTransactionFields
+        {...defaultProps}
+        accounts={[closedAccount]}
+        watchedAccountId="acc-closed"
+      />
+    );
+
+    const accountSelect = screen.getByLabelText('Account');
+    const options = Array.from(accountSelect.querySelectorAll('option'));
+    const optionLabels = options.map(o => o.textContent);
+
+    expect(optionLabels).toContain('Closed Account (CAD) (Closed)');
   });
 
   it('sorts account options alphabetically', () => {

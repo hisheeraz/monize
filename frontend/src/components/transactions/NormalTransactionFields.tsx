@@ -61,13 +61,13 @@ export function NormalTransactionFields({
             { value: '', label: 'Select account...' },
             ...accounts
               .filter(account =>
-                !account.isClosed &&
-                account.accountSubType !== 'INVESTMENT_BROKERAGE'
+                account.accountSubType !== 'INVESTMENT_BROKERAGE' &&
+                (!account.isClosed || account.id === watchedAccountId)
               )
               .sort((a, b) => a.name.localeCompare(b.name))
               .map(account => ({
                 value: account.id,
-                label: `${account.name} (${account.currencyCode})`,
+                label: `${account.name} (${account.currencyCode})${account.isClosed ? ' (Closed)' : ''}`,
               })
             ),
           ]}
