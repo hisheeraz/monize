@@ -956,26 +956,32 @@ describe("SecurityPriceService", () => {
       expect(result.totalPricesLoaded).toBe(0);
     });
 
-    it("skips securities with no investment transactions", async () => {
+    it("backfills 1Y of daily prices for securities with no investment transactions", async () => {
       securitiesRepository.find.mockResolvedValue([mockSecurity]);
       // No transactions for this security
       dataSourceMock.query.mockResolvedValueOnce([]);
 
-      const fetchSpy = jest.fn();
-      global.fetch = fetchSpy;
+      const historicalData = makeYahooHistoricalResponse({
+        timestamps: [1748700000, 1748800000],
+        closes: [193.0, 194.0],
+      });
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue(
+          createMockFetchResponse(historicalData),
+        ) as jest.Mock;
+
+      dataSourceMock.query.mockResolvedValue(undefined);
 
       const result = await service.backfillHistoricalPrices();
 
       expect(result.successful).toBe(1);
-      expect(result.results[0]).toEqual(
-        expect.objectContaining({
-          symbol: "AAPL",
-          success: true,
-          pricesLoaded: 0,
-        }),
+      expect(result.totalPricesLoaded).toBeGreaterThan(0);
+      // Should fetch 1Y daily data even without transactions
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect((global.fetch as jest.Mock).mock.calls[0][0]).toContain(
+        "range=1y",
       );
-      // Should not have called fetch since no transaction dates
-      expect(fetchSpy).not.toHaveBeenCalled();
     });
 
     it("successfully backfills historical prices", async () => {
@@ -1046,23 +1052,24 @@ describe("SecurityPriceService", () => {
     it("tries alternate symbols when primary fails for backfill", async () => {
       securitiesRepository.find.mockResolvedValue([mockSecurityNoExchange]);
       dataSourceMock.query.mockResolvedValueOnce([
-        { security_id: "sec-3", earliest: "2025-01-01" },
+        { security_id: "sec-3", earliest: "2026-01-01" },
       ]);
 
       const fetchMock = jest
         .fn()
         .mockResolvedValueOnce(
           createMockFetchResponse({ chart: { result: [] } }),
-        ) // MSFT fails
+        ) // MSFT 1y fails
         .mockResolvedValueOnce(
           createMockFetchResponse(makeYahooHistoricalResponse()),
-        ); // MSFT.TO succeeds
+        ); // MSFT.TO 1y succeeds
       global.fetch = fetchMock;
 
       dataSourceMock.query.mockResolvedValue(undefined);
 
       const result = await service.backfillHistoricalPrices();
 
+      // 2 calls: MSFT 1y (fails) -> MSFT.TO 1y (succeeds)
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(result.successful).toBe(1);
     });
@@ -1081,8 +1088,8 @@ describe("SecurityPriceService", () => {
       securitiesRepository.find.mockResolvedValue([sec1, sec2]);
 
       dataSourceMock.query.mockResolvedValueOnce([
-        { security_id: "sec-1", earliest: "2025-01-01" },
-        { security_id: "sec-10", earliest: "2025-03-01" },
+        { security_id: "sec-1", earliest: "2026-01-01" },
+        { security_id: "sec-10", earliest: "2026-02-01" },
       ]);
 
       const historicalData = makeYahooHistoricalResponse({
@@ -1098,17 +1105,16 @@ describe("SecurityPriceService", () => {
 
       const result = await service.backfillHistoricalPrices();
 
-      // Only 1 fetch call for the deduplicated group
+      // 1 fetch for 1y daily data (no max needed since earliest tx is within 1y)
       expect(global.fetch).toHaveBeenCalledTimes(1);
       expect(result.successful).toBe(2);
     });
 
-    it("filters prices to per-security earliest transaction date", async () => {
-      // Two securities in different groups with different earliest dates
+    it("uses 1Y lookback even when earliest transaction is in the future", async () => {
+      // Earliest transaction is far in the future, but we still backfill 1Y
       const sec1 = { ...mockSecurity, id: "sec-1" } as Security;
       securitiesRepository.find.mockResolvedValue([sec1]);
 
-      // Earliest transaction is far in the future relative to prices
       dataSourceMock.query.mockResolvedValueOnce([
         { security_id: "sec-1", earliest: "2099-01-01" },
       ]);
@@ -1127,8 +1133,8 @@ describe("SecurityPriceService", () => {
 
       const result = await service.backfillHistoricalPrices();
 
-      // All prices are before 2099, so 0 prices loaded
-      expect(result.results[0].pricesLoaded).toBe(0);
+      // Prices within 1Y are loaded even though earliest tx is 2099
+      expect(result.results[0].pricesLoaded).toBe(2);
       expect(result.results[0].success).toBe(true);
     });
 
@@ -1172,6 +1178,72 @@ describe("SecurityPriceService", () => {
       // Only 2 valid prices (the null close is skipped)
       expect(result.successful).toBe(1);
       expect(result.results[0].pricesLoaded).toBe(2);
+    });
+
+    it("fetches both 1y and max range when transactions exist before 1Y ago", async () => {
+      securitiesRepository.find.mockResolvedValue([mockSecurity]);
+      // Earliest transaction is more than 1 year ago
+      dataSourceMock.query.mockResolvedValueOnce([
+        { security_id: "sec-1", earliest: "2020-01-01" },
+      ]);
+
+      const historicalData = makeYahooHistoricalResponse({
+        timestamps: [1748700000, 1748800000],
+        closes: [193.0, 194.0],
+      });
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(
+          createMockFetchResponse(historicalData),
+        ) as jest.Mock;
+      global.fetch = fetchMock;
+
+      dataSourceMock.query.mockResolvedValue(undefined);
+
+      const result = await service.backfillHistoricalPrices();
+
+      // 2 fetches: 1y for daily data + max for older monthly data
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls[0][0]).toContain("range=1y");
+      expect(fetchMock.mock.calls[1][0]).toContain("range=max");
+      expect(result.successful).toBe(1);
+      expect(result.totalPricesLoaded).toBeGreaterThan(0);
+    });
+  });
+
+  describe("backfillMissingDailyPrices", () => {
+    it("skips when all securities have sufficient coverage", async () => {
+      dataSourceMock.query.mockResolvedValueOnce([]);
+
+      await service.backfillMissingDailyPrices();
+
+      // No fetch calls needed
+      expect(dataSourceMock.query).toHaveBeenCalledTimes(1);
+    });
+
+    it("backfills securities with insufficient daily prices", async () => {
+      dataSourceMock.query.mockResolvedValueOnce([
+        { id: "sec-1", symbol: "AAPL", exchange: "NASDAQ", cnt: "50" },
+      ]);
+
+      const historicalData = makeYahooHistoricalResponse({
+        timestamps: [1748700000, 1748800000],
+        closes: [193.0, 194.0],
+      });
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue(
+          createMockFetchResponse(historicalData),
+        ) as jest.Mock;
+
+      dataSourceMock.query.mockResolvedValue(undefined);
+
+      await service.backfillMissingDailyPrices();
+
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect((global.fetch as jest.Mock).mock.calls[0][0]).toContain(
+        "range=1y",
+      );
     });
   });
 

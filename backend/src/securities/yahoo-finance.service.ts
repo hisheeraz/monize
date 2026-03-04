@@ -291,11 +291,15 @@ export class YahooFinanceService {
   }
 
   /**
-   * Fetch historical daily prices from Yahoo Finance for a single symbol
+   * Fetch historical daily prices from Yahoo Finance for a single symbol.
+   * @param range - Yahoo Finance range string (e.g. "1y", "5y", "max"). Defaults to "max".
    */
-  async fetchHistorical(symbol: string): Promise<HistoricalPrice[] | null> {
+  async fetchHistorical(
+    symbol: string,
+    range: string = "max",
+  ): Promise<HistoricalPrice[] | null> {
     try {
-      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=max`;
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=${range}`;
 
       const response = await fetch(url, {
         headers: {

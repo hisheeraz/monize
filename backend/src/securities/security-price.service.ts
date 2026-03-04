@@ -333,7 +333,56 @@ export class SecurityPriceService {
   }
 
   /**
+   * Fetch historical prices for a symbol with alternate-symbol fallback.
+   * Returns null if no data is available from any symbol variant.
+   */
+  private async fetchWithFallback(
+    symbol: string,
+    exchange: string | null,
+    range: string = "max",
+  ): Promise<HistoricalPrice[] | null> {
+    const yahooSymbol = this.yahooFinance.getYahooSymbol(symbol, exchange);
+    let prices = await this.yahooFinance.fetchHistorical(yahooSymbol, range);
+
+    if (!prices && yahooSymbol === symbol) {
+      const alternateSymbols = this.yahooFinance.getAlternateSymbols(symbol);
+      for (const altSymbol of alternateSymbols) {
+        prices = await this.yahooFinance.fetchHistorical(altSymbol, range);
+        if (prices) break;
+      }
+    }
+
+    return prices;
+  }
+
+  /**
+   * Merge two price arrays, preferring dailyPrices for dates within the last year
+   * and maxPrices for older dates. Deduplicates by date.
+   */
+  private mergePrices(
+    maxPrices: HistoricalPrice[],
+    dailyPrices: HistoricalPrice[],
+    oneYearAgo: Date,
+  ): HistoricalPrice[] {
+    // Use max-range data for dates before 1Y ago, daily data for the last year
+    const olderPrices = maxPrices.filter((p) => p.date < oneYearAgo);
+    const merged = [...olderPrices, ...dailyPrices];
+
+    // Deduplicate by date string, keeping the later entry (daily data wins)
+    const byDate = new Map<string, HistoricalPrice>();
+    for (const p of merged) {
+      byDate.set(p.date.toISOString().substring(0, 10), p);
+    }
+
+    return [...byDate.values()].sort(
+      (a, b) => a.date.getTime() - b.date.getTime(),
+    );
+  }
+
+  /**
    * Backfill historical prices for all active securities.
+   * Fetches daily prices for the last year and monthly for older periods.
+   * Always backfills at least 1 year, even for securities with no transactions.
    */
   async backfillHistoricalPrices(): Promise<HistoricalBackfillSummary> {
     const startTime = Date.now();
@@ -354,6 +403,11 @@ export class SecurityPriceService {
       earliestTxRows.map((r) => [r.security_id, r.earliest]),
     );
 
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    oneYearAgo.setHours(0, 0, 0, 0);
+    const oneYearAgoStr = oneYearAgo.toISOString().substring(0, 10);
+
     const results: HistoricalBackfillResult[] = [];
     let successful = 0;
     let failed = 0;
@@ -371,41 +425,33 @@ export class SecurityPriceService {
     for (const group of symbolGroups.values()) {
       const representative = group[0];
 
+      // Determine the earliest cutoff across the group (min of 1Y ago and earliest tx)
       const groupEarliestDates = group
         .map((s) => earliestTxDate.get(s.id))
         .filter(Boolean) as string[];
 
-      if (groupEarliestDates.length === 0) {
-        for (const security of group) {
-          results.push({
-            symbol: security.symbol,
-            success: true,
-            pricesLoaded: 0,
-          });
-          successful++;
-        }
-        continue;
-      }
+      const needsOlderData =
+        groupEarliestDates.length > 0 &&
+        groupEarliestDates.some((d) => d < oneYearAgoStr);
 
-      const groupEarliest = groupEarliestDates.sort()[0];
-
-      const yahooSymbol = this.yahooFinance.getYahooSymbol(
+      // Always fetch daily 1Y data for guaranteed daily granularity
+      const dailyPrices = await this.fetchWithFallback(
         representative.symbol,
         representative.exchange,
+        "1y",
       );
-      let allPrices = await this.yahooFinance.fetchHistorical(yahooSymbol);
 
-      if (!allPrices && yahooSymbol === representative.symbol) {
-        const alternateSymbols = this.yahooFinance.getAlternateSymbols(
+      // Also fetch max range if transactions exist before 1Y ago
+      let maxPrices: HistoricalPrice[] | null = null;
+      if (needsOlderData) {
+        maxPrices = await this.fetchWithFallback(
           representative.symbol,
+          representative.exchange,
+          "max",
         );
-        for (const altSymbol of alternateSymbols) {
-          allPrices = await this.yahooFinance.fetchHistorical(altSymbol);
-          if (allPrices) break;
-        }
       }
 
-      if (!allPrices || allPrices.length === 0) {
+      if (!dailyPrices && !maxPrices) {
         for (const security of group) {
           results.push({
             symbol: security.symbol,
@@ -417,11 +463,13 @@ export class SecurityPriceService {
         continue;
       }
 
-      // Filter and deduplicate
-      const groupCutoff = new Date(groupEarliest);
-      groupCutoff.setHours(0, 0, 0, 0);
-      allPrices = allPrices.filter((p) => p.date >= groupCutoff);
+      // Merge: daily 1Y data + monthly older data from max range
+      let allPrices =
+        maxPrices && dailyPrices
+          ? this.mergePrices(maxPrices, dailyPrices, oneYearAgo)
+          : dailyPrices || maxPrices!;
 
+      // Deduplicate by date
       const seen = new Set<string>();
       allPrices = allPrices.filter((p) => {
         const key = p.date.toISOString().substring(0, 10);
@@ -431,18 +479,12 @@ export class SecurityPriceService {
       });
 
       for (const security of group) {
+        // Per-security cutoff: earliest of 1Y ago or earliest transaction
         const secEarliest = earliestTxDate.get(security.id);
-        if (!secEarliest) {
-          results.push({
-            symbol: security.symbol,
-            success: true,
-            pricesLoaded: 0,
-          });
-          successful++;
-          continue;
-        }
-
-        const secCutoff = new Date(secEarliest);
+        const secCutoffStr = secEarliest
+          ? [oneYearAgoStr, secEarliest].sort()[0]
+          : oneYearAgoStr;
+        const secCutoff = new Date(secCutoffStr);
         secCutoff.setHours(0, 0, 0, 0);
         const prices = allPrices.filter((p) => p.date >= secCutoff);
 
@@ -460,7 +502,7 @@ export class SecurityPriceService {
           await this.bulkUpsertPrices(security.id, prices);
 
           this.logger.log(
-            `Backfilled ${prices.length} prices for ${security.symbol} (from ${secEarliest})`,
+            `Backfilled ${prices.length} prices for ${security.symbol} (from ${secCutoffStr})`,
           );
           results.push({
             symbol: security.symbol,
@@ -561,6 +603,74 @@ export class SecurityPriceService {
       }
     } catch (error) {
       this.logger.error(`Scheduled price refresh failed: ${error.message}`);
+    }
+
+    // Weekly backfill check on Mondays to ensure 1Y of daily price data
+    if (new Date().getDay() === 1) {
+      try {
+        await this.backfillMissingDailyPrices();
+      } catch (error) {
+        this.logger.error(`Weekly backfill check failed: ${error.message}`);
+      }
+    }
+  }
+
+  /**
+   * Backfill daily prices for securities that are missing data within the last year.
+   * Only fetches for securities where gaps exist, to minimize API calls.
+   */
+  async backfillMissingDailyPrices(): Promise<void> {
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const oneYearAgoStr = oneYearAgo.toISOString().substring(0, 10);
+
+    // Find securities with fewer daily prices than expected in the last year
+    // (~252 trading days). Use a threshold of 200 to account for holidays/weekends.
+    const rows: Array<{
+      id: string;
+      symbol: string;
+      exchange: string;
+      cnt: string;
+    }> = await this.dataSource.query(
+      `SELECT s.id, s.symbol, s.exchange, COUNT(sp.id)::TEXT as cnt
+         FROM securities s
+         LEFT JOIN security_prices sp
+           ON sp.security_id = s.id AND sp.price_date >= $1
+         WHERE s.is_active = true AND s.skip_price_updates = false
+         GROUP BY s.id
+         HAVING COUNT(sp.id) < 200`,
+      [oneYearAgoStr],
+    );
+
+    if (rows.length === 0) {
+      this.logger.log("All securities have sufficient daily price coverage");
+      return;
+    }
+
+    this.logger.log(
+      `Found ${rows.length} securities with incomplete daily price data, backfilling`,
+    );
+
+    for (const row of rows) {
+      const prices = await this.fetchWithFallback(
+        row.symbol,
+        row.exchange,
+        "1y",
+      );
+      if (!prices || prices.length === 0) continue;
+
+      try {
+        await this.bulkUpsertPrices(row.id, prices);
+        this.logger.log(
+          `Backfilled ${prices.length} daily prices for ${row.symbol}`,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to backfill daily prices for ${row.symbol}: ${error.message}`,
+        );
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
   }
 }
