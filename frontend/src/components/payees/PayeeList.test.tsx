@@ -211,7 +211,7 @@ describe('PayeeList', () => {
     });
   });
 
-  it('deletes payee and calls onRefresh on confirm', async () => {
+  it('deletes payee and calls onRefresh on confirm when onDelete not provided', async () => {
     const payees = [
       makePayee({ id: 'p1', name: 'Walmart' }),
     ];
@@ -231,6 +231,30 @@ describe('PayeeList', () => {
     await waitFor(() => {
       expect(onRefresh).toHaveBeenCalled();
     });
+  });
+
+  it('calls onDelete instead of onRefresh when onDelete is provided', async () => {
+    const onDeleteFn = vi.fn();
+    const payees = [
+      makePayee({ id: 'p1', name: 'Walmart' }),
+    ];
+
+    render(<PayeeList payees={payees} onEdit={onEdit} onRefresh={onRefresh} onDelete={onDeleteFn} />);
+    fireEvent.click(screen.getByText('Delete'));
+
+    const deleteButtons = screen.getAllByText('Delete');
+    const confirmButton = deleteButtons[deleteButtons.length - 1];
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => {
+      expect(mockPayeesApi.delete).toHaveBeenCalledWith('p1');
+    });
+
+    await waitFor(() => {
+      expect(onDeleteFn).toHaveBeenCalledWith('p1');
+    });
+
+    expect(onRefresh).not.toHaveBeenCalled();
   });
 
   it('shows error toast when delete fails', async () => {

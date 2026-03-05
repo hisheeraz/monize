@@ -269,7 +269,7 @@ describe('CategoryList', () => {
     });
   });
 
-  it('deletes category and calls onRefresh on confirm', async () => {
+  it('deletes category and calls onRefresh on confirm when onDelete not provided', async () => {
     mockCategoriesApi.getTransactionCount.mockResolvedValueOnce(0);
     const categories = [
       makeCategory({ id: 'c1', name: 'Food', isSystem: false }),
@@ -295,6 +295,35 @@ describe('CategoryList', () => {
     await waitFor(() => {
       expect(onRefresh).toHaveBeenCalled();
     });
+  });
+
+  it('calls onDelete instead of onRefresh when onDelete is provided', async () => {
+    mockCategoriesApi.getTransactionCount.mockResolvedValueOnce(0);
+    const onDeleteFn = vi.fn();
+    const categories = [
+      makeCategory({ id: 'c1', name: 'Food', isSystem: false }),
+    ];
+
+    render(<CategoryList categories={categories} onEdit={onEdit} onRefresh={onRefresh} onDelete={onDeleteFn} />);
+    fireEvent.click(screen.getByText('Delete'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Delete "Food"?')).toBeInTheDocument();
+    });
+
+    const deleteButtons = screen.getAllByText('Delete');
+    const confirmButton = deleteButtons[deleteButtons.length - 1];
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => {
+      expect(mockCategoriesApi.delete).toHaveBeenCalledWith('c1');
+    });
+
+    await waitFor(() => {
+      expect(onDeleteFn).toHaveBeenCalledWith('c1');
+    });
+
+    expect(onRefresh).not.toHaveBeenCalled();
   });
 
   // Subcategories (tree structure)

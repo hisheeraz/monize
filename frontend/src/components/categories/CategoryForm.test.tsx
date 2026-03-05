@@ -86,4 +86,45 @@ describe('CategoryForm', () => {
     // The red swatch should now have the selected ring style
     expect(redSwatch.className).toContain('ring-2');
   });
+
+  it('does not render an icon field', () => {
+    render(<CategoryForm categories={categories} onSubmit={onSubmit} onCancel={onCancel} />);
+    expect(screen.queryByLabelText(/icon/i)).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('e.g., shopping-cart')).not.toBeInTheDocument();
+  });
+
+  it('renders a mobile colour dropdown with all palette options', () => {
+    render(<CategoryForm categories={categories} onSubmit={onSubmit} onCancel={onCancel} />);
+    // The mobile select should contain colour options
+    const selects = screen.getAllByRole('combobox');
+    const colourSelect = selects.find(s => {
+      const options = s.querySelectorAll('option');
+      return Array.from(options).some(o => o.textContent === 'Red');
+    });
+    expect(colourSelect).toBeTruthy();
+
+    // Verify all palette colours are present as options
+    const options = colourSelect!.querySelectorAll('option');
+    const optionLabels = Array.from(options).map(o => o.textContent);
+    expect(optionLabels).toContain('No colour');
+    expect(optionLabels).toContain('Red');
+    expect(optionLabels).toContain('Blue');
+    expect(optionLabels).toContain('Green');
+  });
+
+  it('selects colour via mobile dropdown', () => {
+    render(<CategoryForm categories={categories} onSubmit={onSubmit} onCancel={onCancel} />);
+    const selects = screen.getAllByRole('combobox');
+    const colourSelect = selects.find(s => {
+      const options = s.querySelectorAll('option');
+      return Array.from(options).some(o => o.textContent === 'Red');
+    });
+    expect(colourSelect).toBeTruthy();
+
+    fireEvent.change(colourSelect!, { target: { value: '#ef4444' } });
+
+    // The desktop red swatch should now show as selected
+    const redSwatch = screen.getByTitle('Red');
+    expect(redSwatch.className).toContain('ring-2');
+  });
 });
