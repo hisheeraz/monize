@@ -280,19 +280,51 @@ export class AiInsightsService {
   private buildInsightsPrompt(aggregates: SpendingAggregates): string {
     const sections: string[] = [];
 
+    const projectedMonthlySpending =
+      aggregates.daysElapsedInMonth > 0
+        ? (aggregates.totalSpendingCurrentMonth /
+            aggregates.daysElapsedInMonth) *
+          aggregates.daysInMonth
+        : 0;
+    const projectedVsAvgPct =
+      aggregates.averageMonthlySpending > 0
+        ? ((projectedMonthlySpending - aggregates.averageMonthlySpending) /
+            aggregates.averageMonthlySpending) *
+          100
+        : 0;
+
     sections.push(
       `Currency: ${aggregates.currency}`,
       `Days elapsed in current month: ${aggregates.daysElapsedInMonth}/${aggregates.daysInMonth}`,
-      `Total spending current month: ${aggregates.totalSpendingCurrentMonth.toFixed(2)}`,
+      `Total spending current month (so far): ${aggregates.totalSpendingCurrentMonth.toFixed(2)}`,
+      `Projected full-month spending: ${projectedMonthlySpending.toFixed(2)}`,
       `Total spending previous month: ${aggregates.totalSpendingPreviousMonth.toFixed(2)}`,
       `Average monthly spending (6-month): ${aggregates.averageMonthlySpending.toFixed(2)}`,
+      `Projected vs average: ${projectedVsAvgPct >= 0 ? "+" : ""}${projectedVsAvgPct.toFixed(1)}%`,
     );
 
-    if (aggregates.categorySpending.length > 0) {
-      sections.push("\n--- CATEGORY SPENDING ---");
-      for (const cat of aggregates.categorySpending.slice(0, 15)) {
+    // Filter to categories with actual current-month spending
+    const activeCategories = aggregates.categorySpending.filter(
+      (cat) => cat.currentMonthTotal > 0,
+    );
+
+    if (activeCategories.length > 0) {
+      sections.push("\n--- CATEGORY SPENDING (current month > $0 only) ---");
+      for (const cat of activeCategories.slice(0, 15)) {
+        const vsAvgPct =
+          cat.averageMonthlyTotal > 0
+            ? ((cat.currentMonthTotal - cat.averageMonthlyTotal) /
+                cat.averageMonthlyTotal) *
+              100
+            : 0;
+        const vsPrevPct =
+          cat.previousMonthTotal > 0
+            ? ((cat.currentMonthTotal - cat.previousMonthTotal) /
+                cat.previousMonthTotal) *
+              100
+            : 0;
         sections.push(
-          `${sanitizePromptValue(cat.categoryName)}: current month=${cat.currentMonthTotal.toFixed(2)}, previous month=${cat.previousMonthTotal.toFixed(2)}, 6-month avg=${cat.averageMonthlyTotal.toFixed(2)}, months with data=${cat.monthCount}, transactions=${cat.transactionCount}`,
+          `${sanitizePromptValue(cat.categoryName)}: current month=${cat.currentMonthTotal.toFixed(2)}, previous month=${cat.previousMonthTotal.toFixed(2)}, 6-month avg=${cat.averageMonthlyTotal.toFixed(2)}, vs avg=${vsAvgPct >= 0 ? "+" : ""}${vsAvgPct.toFixed(1)}%, vs prev=${vsPrevPct >= 0 ? "+" : ""}${vsPrevPct.toFixed(1)}%, months with data=${cat.monthCount}, transactions=${cat.transactionCount}`,
         );
       }
     }

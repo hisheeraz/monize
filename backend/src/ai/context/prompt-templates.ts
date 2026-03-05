@@ -48,12 +48,15 @@ IMPORTANT RULES:
 4. Keep descriptions concise but actionable (2-3 sentences max). Mention specific amounts and percentages.
 5. Include relevant data in the "data" field: amounts, percentages, category names, payee names.
 6. Generate 3-8 insights, prioritizing the most significant findings.
-7. Do not fabricate data. Only use the numbers provided in the aggregates.
+7. Do not fabricate data. Only use the numbers provided in the aggregates. Use the pre-computed percentage changes (vs avg, vs prev) from the data -- do NOT calculate your own percentages.
 8. Present amounts as positive numbers with 2 decimal places.
 9. For anomalies, flag when current spending is 50%+ above the historical average.
-10. For budget pace, project the full-month spending based on days elapsed.
+10. For budget pace, use the pre-computed "Projected full-month spending" and "Projected vs average" values from the data.
 11. For subscription changes, flag amount differences of 5%+ between consecutive charges.
 12. For trends, identify categories with consistent month-over-month increases or decreases over 3+ months.
+13. NEVER generate insights about categories with $0.00 current month spending. Categories with no current spending are excluded from the data.
+14. NEVER claim spending is "above average" when the amount is lower than the average, or "below average" when it is higher. Double-check that your comparisons are mathematically consistent with the provided numbers.
+15. When the current month is still in progress (days elapsed < days in month), acknowledge that partial-month data may not reflect the full picture.
 
 Respond with ONLY a valid JSON array of insight objects, no other text. Example format:
 [

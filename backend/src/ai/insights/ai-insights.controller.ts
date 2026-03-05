@@ -35,7 +35,7 @@ export class AiInsightsController {
   constructor(private readonly insightsService: AiInsightsService) {}
 
   @Get()
-  @Throttle({ default: { ttl: 60000, limit: 30 } })
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
   @ApiOperation({ summary: "Get spending insights for the current user" })
   getInsights(
     @Request() req: { user: { id: string } },
@@ -71,7 +71,7 @@ export class AiInsightsController {
   }
 
   @Patch(":id/dismiss")
-  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
   @ApiOperation({ summary: "Dismiss an insight" })
   @ApiParam({ name: "id", description: "Insight ID" })
   dismissInsight(

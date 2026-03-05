@@ -469,6 +469,63 @@ describe("AiInsightsService", () => {
       }
     });
 
+    it("excludes zero-spending categories from AI prompt", async () => {
+      const qb = mockQb();
+      qb.getOne.mockResolvedValue(null);
+      qb.getMany.mockResolvedValue([]);
+      qb.getRawOne.mockResolvedValue(null);
+      mockInsightRepo.createQueryBuilder.mockReturnValue(qb);
+
+      mockAggregatorService.computeAggregates!.mockResolvedValue(
+        makeAggregates({
+          categorySpending: [
+            {
+              categoryName: "Dining",
+              categoryId: "cat-1",
+              currentMonthTotal: 450,
+              previousMonthTotal: 250,
+              averageMonthlyTotal: 250,
+              monthCount: 6,
+              transactionCount: 15,
+            },
+            {
+              categoryName: "Lodging",
+              categoryId: "cat-2",
+              currentMonthTotal: 0,
+              previousMonthTotal: 1375.67,
+              averageMonthlyTotal: 1375.67,
+              monthCount: 5,
+              transactionCount: 8,
+            },
+          ],
+        }),
+      );
+
+      await service.generateInsights(userId);
+
+      const prompt = mockAiService.complete!.mock.calls[0][1].messages[0]
+        .content as string;
+      expect(prompt).toContain("Dining");
+      expect(prompt).not.toContain("Lodging");
+    });
+
+    it("includes pre-computed percentage changes in AI prompt", async () => {
+      const qb = mockQb();
+      qb.getOne.mockResolvedValue(null);
+      qb.getMany.mockResolvedValue([]);
+      qb.getRawOne.mockResolvedValue(null);
+      mockInsightRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.generateInsights(userId);
+
+      const prompt = mockAiService.complete!.mock.calls[0][1].messages[0]
+        .content as string;
+      expect(prompt).toContain("vs avg=");
+      expect(prompt).toContain("vs prev=");
+      expect(prompt).toContain("Projected full-month spending");
+      expect(prompt).toContain("Projected vs average");
+    });
+
     it("uses default currency when no preferences exist", async () => {
       const qb = mockQb();
       qb.getOne.mockResolvedValue(null);
