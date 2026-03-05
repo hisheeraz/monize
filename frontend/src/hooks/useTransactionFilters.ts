@@ -186,7 +186,8 @@ export function useTransactionFilters({ accounts, categories, payees, weekStarts
 
   const payeeFilterOptions = useMemo(() => {
     return payees
-      .sort((a, b) => a.name.localeCompare(b.name))
+      .filter(payee => payee.isActive)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
       .map(payee => ({ value: payee.id, label: payee.name }));
   }, [payees]);
 

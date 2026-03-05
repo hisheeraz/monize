@@ -229,11 +229,11 @@ export function PayeeList({
     return [...payees].sort((a, b) => {
       let comparison = 0;
       if (sortField === 'name') {
-        comparison = a.name.localeCompare(b.name);
+        comparison = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
       } else if (sortField === 'category') {
         const catA = a.defaultCategory?.name || '';
         const catB = b.defaultCategory?.name || '';
-        comparison = catA.localeCompare(catB);
+        comparison = catA.localeCompare(catB, undefined, { sensitivity: 'base' });
       } else if (sortField === 'count') {
         comparison = (a.transactionCount ?? 0) - (b.transactionCount ?? 0);
       }
