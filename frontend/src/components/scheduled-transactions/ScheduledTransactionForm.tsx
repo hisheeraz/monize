@@ -252,7 +252,7 @@ export function ScheduledTransactionForm({
         toast.error(getErrorMessage(error, 'Failed to load form data'));
         logger.error(error);
       });
-  }, []);
+  }, [scheduledTransaction?.payeeId]);
 
   // Handle mode changes
   const handleModeChange = (newMode: ScheduledTransactionMode) => {

@@ -291,7 +291,7 @@ export function TransactionForm({ transaction, defaultAccountId, onSuccess, onCa
         toast.error(getErrorMessage(error, 'Failed to load form data'));
         logger.error(error);
       });
-  }, []);
+  }, [transaction?.payeeId]);
 
   // Handle payee selection
   const handlePayeeChange = (payeeId: string, payeeName: string) => {
