@@ -582,7 +582,7 @@ export function AccountForm({ account, onSubmit, onCancel, onDirtyChange, submit
       />
 
       {/* Favourite star toggle */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <button
           type="button"
           onClick={toggleFavourite}
@@ -619,7 +619,7 @@ export function AccountForm({ account, onSubmit, onCancel, onDirtyChange, submit
             <button
               type="button"
               onClick={handleImportQif}
-              className="flex items-center gap-2 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-2 rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
               title="Import transactions from QIF file"
             >
               <svg
@@ -635,14 +635,14 @@ export function AccountForm({ account, onSubmit, onCancel, onDirtyChange, submit
                   d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
                 />
               </svg>
-              <span className="text-sm text-gray-700 dark:text-gray-300">Import</span>
+              <span className="hidden sm:inline text-sm text-gray-700 dark:text-gray-300">Import</span>
             </button>
             <div className="relative" ref={exportMenuRef}>
               <button
                 type="button"
                 onClick={() => setShowExportMenu(!showExportMenu)}
                 disabled={isExporting}
-                className="flex items-center gap-2 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 px-2.5 py-2 rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                 title="Export account transactions"
               >
                 <svg
@@ -658,7 +658,7 @@ export function AccountForm({ account, onSubmit, onCancel, onDirtyChange, submit
                     d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
                   />
                 </svg>
-                <span className="text-sm text-gray-700 dark:text-gray-300">Export</span>
+                <span className="hidden sm:inline text-sm text-gray-700 dark:text-gray-300">Export</span>
               </button>
               {showExportMenu && (
                 <div className="absolute right-0 bottom-full mb-1 w-32 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg z-50">
