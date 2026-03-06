@@ -303,7 +303,14 @@ export function AccountForm({ account, onSubmit, onCancel, onDirtyChange, submit
 
   const handleImportQif = () => {
     if (account) {
-      router.push(`/import?accountId=${account.id}`);
+      const accountId = account.id;
+      // Close the modal first so its history entry is cleaned up
+      // before navigating. Without this, the Modal's unmount cleanup
+      // calls history.back() which navigates away from the import page.
+      onCancel();
+      setTimeout(() => {
+        router.push(`/import?accountId=${accountId}`);
+      }, 100);
     }
   };
 
