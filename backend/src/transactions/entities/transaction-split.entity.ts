@@ -53,7 +53,7 @@ export class TransactionSplit {
   @Column({ type: "uuid", name: "linked_transaction_id", nullable: true })
   linkedTransactionId: string | null;
 
-  @ManyToOne(() => Transaction, { nullable: true })
+  @ManyToOne(() => Transaction, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "linked_transaction_id" })
   linkedTransaction: Transaction | null;
 

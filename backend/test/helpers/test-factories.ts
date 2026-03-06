@@ -1,5 +1,8 @@
 import * as bcrypt from "bcryptjs";
-import { Repository } from "typeorm";
+import { DataSource, Repository } from "typeorm";
+import { Account } from "@/accounts/entities/account.entity";
+import { Category } from "@/categories/entities/category.entity";
+import { Payee } from "@/payees/entities/payee.entity";
 
 interface UserData {
   email: string;
@@ -109,4 +112,59 @@ export async function createTestUser(
   const userData = buildUser({ passwordHash, ...overrides });
   const user = repo.create(userData);
   return repo.save(user);
+}
+
+/**
+ * Database-persisting factory functions for integration tests.
+ * These bypass service logic and insert directly via DataSource.
+ */
+
+export async function createTestAccount(
+  dataSource: DataSource,
+  userId: string,
+  overrides: Partial<AccountData> = {},
+): Promise<Account> {
+  const data = buildAccount(userId, overrides);
+  const account = dataSource.manager.create(Account, data as any);
+  return dataSource.manager.save(account);
+}
+
+export async function createTestCategory(
+  dataSource: DataSource,
+  userId: string,
+  overrides: Partial<CategoryData & { isIncome: boolean; parentId: string }> = {},
+): Promise<Category> {
+  const { isIncome, parentId, ...rest } = overrides;
+  const data = buildCategory(userId, rest);
+  const category = dataSource.manager.create(Category, {
+    ...data,
+    isIncome: isIncome ?? false,
+    parentId: parentId ?? null,
+  } as any);
+  return dataSource.manager.save(category);
+}
+
+export async function createTestPayee(
+  dataSource: DataSource,
+  userId: string,
+  overrides: Partial<{
+    name: string;
+    defaultCategoryId: string;
+    notes: string;
+    isActive: boolean;
+  }> = {},
+): Promise<Payee> {
+  const data: Record<string, any> = {
+    userId,
+    name: overrides.name || `Test Payee ${Date.now()}`,
+    isActive: overrides.isActive ?? true,
+  };
+  if (overrides.defaultCategoryId) {
+    data.defaultCategoryId = overrides.defaultCategoryId;
+  }
+  if (overrides.notes) {
+    data.notes = overrides.notes;
+  }
+  const payee = dataSource.manager.create(Payee, data);
+  return dataSource.manager.save(payee);
 }

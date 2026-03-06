@@ -11,6 +11,7 @@ import { Reflector } from "@nestjs/core";
 import { ThrottlerGuard } from "@nestjs/throttler";
 import { AuthGuard } from "@nestjs/passport";
 import { CsrfGuard } from "@/common/guards/csrf.guard";
+import { DemoModeService } from "@/common/demo-mode.service";
 
 // -- Mock user data -----------------------------------------------------------
 
@@ -47,6 +48,8 @@ const mockAuthService = {
   findOrCreateOidcUser: jest.fn(),
   generateTokenPair: jest.fn(),
   getUserById: jest.fn(),
+  sanitizeUser: jest.fn(),
+  checkForgotPasswordEmailLimit: jest.fn(),
 };
 
 const mockOidcService = {
@@ -93,6 +96,7 @@ describe("AuthController (e2e)", () => {
         { provide: OidcService, useValue: mockOidcService },
         { provide: EmailService, useValue: mockEmailService },
         { provide: ConfigService, useValue: mockConfigService },
+        { provide: DemoModeService, useValue: { isDemo: false } },
         Reflector,
       ],
     })
@@ -139,6 +143,19 @@ describe("AuthController (e2e)", () => {
     jest.clearAllMocks();
     // Restore default mock behaviours
     mockEmailService.getStatus.mockReturnValue({ configured: false });
+    mockAuthService.sanitizeUser.mockImplementation((user: any) => ({
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      authProvider: user.authProvider,
+      isActive: user.isActive,
+      role: user.role,
+      hasPassword: !!user.passwordHash,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    }));
+    mockAuthService.checkForgotPasswordEmailLimit.mockReturnValue(true);
   });
 
   // ---------- POST /auth/register -------------------------------------------
@@ -308,6 +325,7 @@ describe("AuthController (e2e)", () => {
         registration: true,
         smtp: false,
         force2fa: false,
+        demo: false,
       });
     });
   });
