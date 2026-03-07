@@ -186,12 +186,14 @@ export class PortfolioService {
       );
 
     // Group holdings by account
-    const holdingsByAccount = this.calculationService.buildHoldingsByAccount(
-      categorised,
-      holdingsResult.holdingsWithValues,
-      effectiveBalances,
-      investmentFlows,
-    );
+    const holdingsByAccount =
+      await this.calculationService.buildHoldingsByAccount(
+        categorised,
+        holdingsResult.holdingsWithValues,
+        effectiveBalances,
+        investmentFlows,
+        rateCache,
+      );
 
     const totalPortfolioValue =
       totalCashValue + holdingsResult.totalHoldingsValue;
