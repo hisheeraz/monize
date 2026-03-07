@@ -8,11 +8,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import Link from 'next/link';
 import Image from 'next/image';
+import { AxiosError } from 'axios';
 import toast from 'react-hot-toast';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/store/authStore';
 import { authApi, AuthMethods } from '@/lib/auth';
+import { passwordSchema, PASSWORD_REQUIREMENTS_TEXT } from '@/lib/zod-helpers';
 import { TwoFactorSetup } from '@/components/auth/TwoFactorSetup';
 import { createLogger } from '@/lib/logger';
 
@@ -20,10 +22,7 @@ const logger = createLogger('Register');
 
 const registerSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
-  password: z
-    .string()
-    .min(12, 'Password must be at least 12 characters')
-    .max(100, 'Password must be less than 100 characters'),
+  password: passwordSchema,
   confirmPassword: z.string(),
   firstName: z.string().max(100, 'First name must be less than 100 characters').optional(),
   lastName: z.string().max(100, 'Last name must be less than 100 characters').optional(),
@@ -78,9 +77,16 @@ export default function RegisterPage() {
       toast.success('Account created successfully!');
       // Show 2FA setup after registration
       setShowTwoFactorSetup(true);
-    } catch {
-      // SECURITY: Use generic error message to prevent account enumeration
-      toast.error('Unable to create account. Please try again.');
+    } catch (error) {
+      // Show specific backend message only for 400 (e.g. breached password, validation).
+      // For everything else (409 duplicate email, 429 rate limit, 5xx), use generic message
+      // to prevent account enumeration and hide internal details.
+      const fallback = 'Unable to create account. Please try again.';
+      if (error instanceof AxiosError && error.response?.status === 400) {
+        toast.error(error.response.data?.message || fallback);
+      } else {
+        toast.error(fallback);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -170,13 +176,20 @@ export default function RegisterPage() {
               />
             </div>
 
-            <Input
-              label="Password"
-              type="password"
-              autoComplete="new-password"
-              error={errors.password?.message}
-              {...register('password')}
-            />
+            <div>
+              <Input
+                label="Password"
+                type="password"
+                autoComplete="new-password"
+                error={errors.password?.message}
+                {...register('password')}
+              />
+              {!errors.password && (
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {PASSWORD_REQUIREMENTS_TEXT}
+                </p>
+              )}
+            </div>
 
             <Input
               label="Confirm password"

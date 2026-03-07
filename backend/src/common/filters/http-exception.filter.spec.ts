@@ -141,6 +141,25 @@ describe("GlobalExceptionFilter", () => {
     );
   });
 
+  it("returns friendly message for 429 Too Many Requests", () => {
+    const exception = new HttpException(
+      { statusCode: 429, message: "ThrottlerException: Too Many Requests" },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
+
+    filter.catch(exception, mockHost);
+
+    expect(mockResponse.status).toHaveBeenCalledWith(
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
+    expect(mockResponse.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: HttpStatus.TOO_MANY_REQUESTS,
+        message: "Too many requests. Please wait a few minutes and try again.",
+      }),
+    );
+  });
+
   it("handles non-Error thrown values", () => {
     filter.catch("string error", mockHost);
 

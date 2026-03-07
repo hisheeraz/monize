@@ -27,18 +27,23 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
-      const exceptionResponse = exception.getResponse();
 
-      if (typeof exceptionResponse === "string") {
-        message = exceptionResponse;
-      } else if (
-        typeof exceptionResponse === "object" &&
-        exceptionResponse !== null
-      ) {
-        const resp = exceptionResponse as Record<string, unknown>;
-        message = (resp.message as string | string[]) || exception.message;
+      if (status === HttpStatus.TOO_MANY_REQUESTS) {
+        message = "Too many requests. Please wait a few minutes and try again.";
       } else {
-        message = exception.message;
+        const exceptionResponse = exception.getResponse();
+
+        if (typeof exceptionResponse === "string") {
+          message = exceptionResponse;
+        } else if (
+          typeof exceptionResponse === "object" &&
+          exceptionResponse !== null
+        ) {
+          const resp = exceptionResponse as Record<string, unknown>;
+          message = (resp.message as string | string[]) || exception.message;
+        } else {
+          message = exception.message;
+        }
       }
     } else if (exception instanceof QueryFailedError) {
       const driverError = exception.driverError as { code?: string };

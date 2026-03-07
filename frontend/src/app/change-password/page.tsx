@@ -14,20 +14,12 @@ import { useAuthStore } from '@/store/authStore';
 import { userSettingsApi } from '@/lib/user-settings';
 import { authApi } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/errors';
-
-const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d\s])/;
+import { passwordSchema, PASSWORD_REQUIREMENTS_TEXT } from '@/lib/zod-helpers';
 
 const changePasswordSchema = z
   .object({
     currentPassword: z.string().min(1, 'Current password is required'),
-    newPassword: z
-      .string()
-      .min(12, 'Password must be at least 12 characters')
-      .max(100, 'Password must be less than 100 characters')
-      .regex(
-        passwordRegex,
-        'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
-      ),
+    newPassword: passwordSchema,
     confirmPassword: z.string(),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {
@@ -123,8 +115,7 @@ export default function ChangePasswordPage() {
           </div>
 
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            Password must be at least 12 characters and contain an uppercase letter, a lowercase
-            letter, a number, and a special character.
+            {PASSWORD_REQUIREMENTS_TEXT}
           </p>
 
           <Button

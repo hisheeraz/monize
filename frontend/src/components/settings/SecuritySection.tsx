@@ -17,10 +17,11 @@ import { authApi } from '@/lib/auth';
 import { usePreferencesStore } from '@/store/preferencesStore';
 import { User, UserPreferences, TrustedDevice } from '@/types/auth';
 import { getErrorMessage } from '@/lib/errors';
+import { passwordSchema, PASSWORD_REQUIREMENTS_TEXT } from '@/lib/zod-helpers';
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required').max(128, 'Password must be 128 characters or less'),
-  newPassword: z.string().min(12, 'Password must be at least 12 characters').max(128, 'Password must be 128 characters or less'),
+  newPassword: passwordSchema,
   confirmPassword: z.string().min(1, 'Please confirm your new password').max(128, 'Password must be 128 characters or less'),
 }).refine((data) => data.newPassword === data.confirmPassword, {
   message: 'New passwords do not match',
@@ -178,13 +179,20 @@ export function SecuritySection({ user, preferences, force2fa, onPreferencesUpda
             error={errors.currentPassword?.message}
             placeholder="Enter current password"
           />
-          <Input
-            label="New Password"
-            type="password"
-            {...register('newPassword')}
-            error={errors.newPassword?.message}
-            placeholder="Enter new password (min. 12 characters)"
-          />
+          <div>
+            <Input
+              label="New Password"
+              type="password"
+              {...register('newPassword')}
+              error={errors.newPassword?.message}
+              placeholder="Enter new password"
+            />
+            {!errors.newPassword && (
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {PASSWORD_REQUIREMENTS_TEXT}
+              </p>
+            )}
+          </div>
           <Input
             label="Confirm New Password"
             type="password"

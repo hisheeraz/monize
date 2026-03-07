@@ -13,16 +13,11 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { authApi } from '@/lib/auth';
 import { getErrorMessage } from '@/lib/errors';
+import { passwordSchema, PASSWORD_REQUIREMENTS_TEXT } from '@/lib/zod-helpers';
 
 const schema = z
   .object({
-    newPassword: z
-      .string()
-      .min(12, 'Password must be at least 12 characters')
-      .regex(/(?=.*[a-z])/, 'Must contain a lowercase letter')
-      .regex(/(?=.*[A-Z])/, 'Must contain an uppercase letter')
-      .regex(/(?=.*\d)/, 'Must contain a number')
-      .regex(/(?=.*[^A-Za-z\d\s])/, 'Must contain a special character'),
+    newPassword: passwordSchema,
     confirmPassword: z.string(),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {
@@ -81,13 +76,20 @@ function ResetPasswordForm() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-6">
-      <Input
-        label="New Password"
-        type="password"
-        autoComplete="new-password"
-        error={errors.newPassword?.message}
-        {...register('newPassword')}
-      />
+      <div>
+        <Input
+          label="New Password"
+          type="password"
+          autoComplete="new-password"
+          error={errors.newPassword?.message}
+          {...register('newPassword')}
+        />
+        {!errors.newPassword && (
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {PASSWORD_REQUIREMENTS_TEXT}
+          </p>
+        )}
+      </div>
       <Input
         label="Confirm Password"
         type="password"

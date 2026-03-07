@@ -122,6 +122,19 @@ describe('SecuritySection', () => {
     expect(container.innerHTML).toBe('');
   });
 
+  it('displays password requirements hint text', () => {
+    render(
+      <SecuritySection
+        user={mockUser}
+        preferences={mockPreferences}
+        force2fa={false}
+        onPreferencesUpdated={mockOnPreferencesUpdated}
+      />
+    );
+
+    expect(screen.getByText(/Password must be at least 12 characters and contain/)).toBeInTheDocument();
+  });
+
   it('shows password mismatch error', async () => {
     render(
       <SecuritySection
@@ -132,9 +145,9 @@ describe('SecuritySection', () => {
       />
     );
 
-    fireEvent.change(screen.getByLabelText('Current Password'), { target: { value: 'oldpass123' } });
-    fireEvent.change(screen.getByLabelText('New Password'), { target: { value: 'newpass123' } });
-    fireEvent.change(screen.getByLabelText('Confirm New Password'), { target: { value: 'different' } });
+    fireEvent.change(screen.getByLabelText('Current Password'), { target: { value: 'OldPassword1!' } });
+    fireEvent.change(screen.getByLabelText('New Password'), { target: { value: 'NewPassword1!' } });
+    fireEvent.change(screen.getByLabelText('Confirm New Password'), { target: { value: 'DifferentPass1!' } });
     fireEvent.submit(screen.getByRole('button', { name: 'Change Password' }));
 
     await waitFor(() => {
@@ -203,7 +216,7 @@ describe('SecuritySection', () => {
     );
 
     expect(screen.getByPlaceholderText('Enter current password')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Enter new password (min. 12 characters)')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Enter new password')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Confirm new password')).toBeInTheDocument();
   });
 
@@ -220,20 +233,40 @@ describe('SecuritySection', () => {
       />
     );
 
-    fireEvent.change(screen.getByLabelText('Current Password'), { target: { value: 'oldpass123!!' } });
-    fireEvent.change(screen.getByLabelText('New Password'), { target: { value: 'newpass12345!' } });
-    fireEvent.change(screen.getByLabelText('Confirm New Password'), { target: { value: 'newpass12345!' } });
+    fireEvent.change(screen.getByLabelText('Current Password'), { target: { value: 'OldPassword1!' } });
+    fireEvent.change(screen.getByLabelText('New Password'), { target: { value: 'NewPassword1!' } });
+    fireEvent.change(screen.getByLabelText('Confirm New Password'), { target: { value: 'NewPassword1!' } });
     fireEvent.submit(screen.getByRole('button', { name: 'Change Password' }));
 
     await waitFor(() => {
       expect(userSettingsApi.changePassword).toHaveBeenCalledWith({
-        currentPassword: 'oldpass123!!',
-        newPassword: 'newpass12345!',
+        currentPassword: 'OldPassword1!',
+        newPassword: 'NewPassword1!',
       });
     });
 
     await waitFor(() => {
       expect(toast.success).toHaveBeenCalledWith('Password changed successfully');
+    });
+  });
+
+  it('shows complexity error for password missing required character types', async () => {
+    render(
+      <SecuritySection
+        user={mockUser}
+        preferences={mockPreferences}
+        force2fa={false}
+        onPreferencesUpdated={mockOnPreferencesUpdated}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText('Current Password'), { target: { value: 'OldPassword1!' } });
+    fireEvent.change(screen.getByLabelText('New Password'), { target: { value: 'alllowercase!1' } });
+    fireEvent.change(screen.getByLabelText('Confirm New Password'), { target: { value: 'alllowercase!1' } });
+    fireEvent.submit(screen.getByRole('button', { name: 'Change Password' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Must contain an uppercase letter')).toBeInTheDocument();
     });
   });
 
@@ -270,9 +303,9 @@ describe('SecuritySection', () => {
       />
     );
 
-    fireEvent.change(screen.getByLabelText('Current Password'), { target: { value: 'oldpass123!!' } });
-    fireEvent.change(screen.getByLabelText('New Password'), { target: { value: 'newpass12345!' } });
-    fireEvent.change(screen.getByLabelText('Confirm New Password'), { target: { value: 'newpass12345!' } });
+    fireEvent.change(screen.getByLabelText('Current Password'), { target: { value: 'OldPassword1!' } });
+    fireEvent.change(screen.getByLabelText('New Password'), { target: { value: 'NewPassword1!' } });
+    fireEvent.change(screen.getByLabelText('Confirm New Password'), { target: { value: 'NewPassword1!' } });
     fireEvent.submit(screen.getByRole('button', { name: 'Change Password' }));
 
     await waitFor(() => {
@@ -292,9 +325,9 @@ describe('SecuritySection', () => {
       />
     );
 
-    fireEvent.change(screen.getByLabelText('Current Password'), { target: { value: 'oldpass123!!' } });
-    fireEvent.change(screen.getByLabelText('New Password'), { target: { value: 'newpass12345!' } });
-    fireEvent.change(screen.getByLabelText('Confirm New Password'), { target: { value: 'newpass12345!' } });
+    fireEvent.change(screen.getByLabelText('Current Password'), { target: { value: 'OldPassword1!' } });
+    fireEvent.change(screen.getByLabelText('New Password'), { target: { value: 'NewPassword1!' } });
+    fireEvent.change(screen.getByLabelText('Confirm New Password'), { target: { value: 'NewPassword1!' } });
     fireEvent.submit(screen.getByRole('button', { name: 'Change Password' }));
 
     await waitFor(() => {
