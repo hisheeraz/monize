@@ -6,11 +6,12 @@ import '@/lib/zodConfig';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import toast from 'react-hot-toast';
-import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { NumericInput } from '@/components/ui/NumericInput';
 import { Select } from '@/components/ui/Select';
+import { Modal } from '@/components/ui/Modal';
+import { SecurityForm } from '@/components/securities/SecurityForm';
 import { investmentsApi } from '@/lib/investments';
 import { getLocalDateString } from '@/lib/utils';
 import { Account } from '@/types/account';
@@ -97,13 +98,7 @@ export function InvestmentTransactionForm({
   const { defaultCurrency, formatCurrency } = useNumberFormat();
   const [isLoading, setIsLoading] = useState(false);
   const [securities, setSecurities] = useState<Security[]>([]);
-  const [showNewSecurityForm, setShowNewSecurityForm] = useState(false);
-  const [newSecurity, setNewSecurity] = useState<CreateSecurityData>({
-    symbol: '',
-    name: '',
-    securityType: 'STOCK',
-    currencyCode: defaultCurrency,
-  });
+  const [showSecurityModal, setShowSecurityModal] = useState(false);
 
   // Filter to only show brokerage accounts (sorted)
   const brokerageAccounts = useMemo(
@@ -228,29 +223,16 @@ export function InvestmentTransactionForm({
     }
   }, [transaction, securities, setValue]);
 
-  const handleCreateSecurity = async () => {
-    if (!newSecurity.symbol || !newSecurity.name) {
-      toast.error('Symbol and name are required');
-      return;
-    }
-
-    setIsLoading(true);
+  const handleSecurityCreated = async (data: CreateSecurityData) => {
     try {
-      const created = await investmentsApi.createSecurity(newSecurity);
+      const created = await investmentsApi.createSecurity(data);
       setSecurities((prev) => [...prev, created]);
       setValue('securityId', created.id);
-      setShowNewSecurityForm(false);
-      setNewSecurity({
-        symbol: '',
-        name: '',
-        securityType: 'STOCK',
-        currencyCode: defaultCurrency,
-      });
+      setShowSecurityModal(false);
       toast.success('Security created');
     } catch (error) {
       toast.error(getErrorMessage(error, 'Failed to create security'));
-    } finally {
-      setIsLoading(false);
+      throw error;
     }
   };
 
@@ -303,6 +285,7 @@ export function InvestmentTransactionForm({
   const canHaveFundingAccount = fundingAccountActions.includes(watchedAction);
 
   return (
+    <>
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       {/* Account Selection */}
       <Select
@@ -369,71 +352,11 @@ export function InvestmentTransactionForm({
           />
           <button
             type="button"
-            onClick={() => setShowNewSecurityForm(!showNewSecurityForm)}
+            onClick={() => setShowSecurityModal(true)}
             className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
           >
-            {showNewSecurityForm ? 'Cancel' : '+ Add new security'}
+            + Add new security
           </button>
-
-          {showNewSecurityForm && (
-            <div className="border dark:border-gray-700 rounded-lg p-4 space-y-3 bg-gray-50 dark:bg-gray-800">
-              <div className="grid grid-cols-2 gap-3">
-                <Input
-                  label="Symbol"
-                  placeholder="e.g., AAPL"
-                  value={newSecurity.symbol}
-                  onChange={(e) =>
-                    setNewSecurity((prev) => ({ ...prev, symbol: e.target.value.toUpperCase() }))
-                  }
-                />
-                <Input
-                  label="Name"
-                  placeholder="e.g., Apple Inc."
-                  value={newSecurity.name}
-                  onChange={(e) =>
-                    setNewSecurity((prev) => ({ ...prev, name: e.target.value }))
-                  }
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Select
-                  label="Type"
-                  value={newSecurity.securityType}
-                  onChange={(e) =>
-                    setNewSecurity((prev) => ({ ...prev, securityType: e.target.value }))
-                  }
-                  options={[
-                    { value: 'STOCK', label: 'Stock' },
-                    { value: 'ETF', label: 'ETF' },
-                    { value: 'MUTUAL_FUND', label: 'Mutual Fund' },
-                    { value: 'BOND', label: 'Bond' },
-                    { value: 'OPTION', label: 'Option' },
-                    { value: 'OTHER', label: 'Other' },
-                  ]}
-                />
-                <Select
-                  label="Currency"
-                  value={newSecurity.currencyCode}
-                  onChange={(e) =>
-                    setNewSecurity((prev) => ({ ...prev, currencyCode: e.target.value }))
-                  }
-                  options={[
-                    { value: 'CAD', label: 'CAD' },
-                    { value: 'USD', label: 'USD' },
-                  ]}
-                />
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleCreateSecurity}
-                isLoading={isLoading}
-              >
-                Create Security
-              </Button>
-            </div>
-          )}
         </div>
       )}
 
@@ -527,5 +450,16 @@ export function InvestmentTransactionForm({
       {/* Form Actions */}
       <FormActions onCancel={onCancel} submitLabel={transaction ? 'Update Transaction' : 'Create Transaction'} isSubmitting={isLoading} />
     </form>
+
+    <Modal isOpen={showSecurityModal} onClose={() => setShowSecurityModal(false)} maxWidth="lg" className="p-6">
+      <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">
+        New Security
+      </h2>
+      <SecurityForm
+        onSubmit={handleSecurityCreated}
+        onCancel={() => setShowSecurityModal(false)}
+      />
+    </Modal>
+    </>
   );
 }

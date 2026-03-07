@@ -370,6 +370,65 @@ describe("PortfolioService", () => {
       });
     });
 
+    describe("when brokerage account holds securities in a different currency", () => {
+      beforeEach(() => {
+        prefRepository.findOne.mockResolvedValue(mockPref);
+        accountsRepository.find.mockResolvedValue([
+          mockBrokerageAccount,
+          mockCashAccount,
+        ]);
+        // AAPL (USD) and VFV (CAD) both in the same CAD brokerage account
+        holdingsRepository.find.mockResolvedValue([
+          mockHoldingAAPL,
+          mockHoldingVFV,
+        ]);
+        // AAPL=175, VFV=95
+        securityPriceRepository.query.mockResolvedValue([
+          {
+            security_id: "sec-1",
+            close_price: "175",
+            price_date: "2026-02-07",
+          },
+          { security_id: "sec-2", close_price: "95", price_date: "2026-02-07" },
+        ]);
+        // USD->CAD rate
+        exchangeRateService.getLatestRate.mockImplementation(
+          (from: string, to: string) => {
+            if (from === "USD" && to === "CAD") return Promise.resolve(1.35);
+            if (from === "CAD" && to === "USD") return Promise.resolve(null);
+            return Promise.resolve(null);
+          },
+        );
+      });
+
+      it("converts holdings to account currency for account-level totals", async () => {
+        const result = await service.getPortfolioSummary(userId);
+
+        const acct = result.holdingsByAccount[0];
+        expect(acct.currencyCode).toBe("CAD");
+
+        // VFV (CAD): costBasis = 50*80 = 4000, marketValue = 50*95 = 4750
+        // AAPL (USD): costBasis = 10*150 = 1500 * 1.35 = 2025 CAD
+        //             marketValue = 10*175 = 1750 * 1.35 = 2362.5 CAD
+        expect(acct.totalCostBasis).toBeCloseTo(4000 + 2025, 2);
+        expect(acct.totalMarketValue).toBeCloseTo(4750 + 2362.5, 2);
+        expect(acct.totalGainLoss).toBeCloseTo(
+          acct.totalMarketValue - acct.totalCostBasis,
+          2,
+        );
+      });
+
+      it("keeps individual holding values in their native currency", async () => {
+        const result = await service.getPortfolioSummary(userId);
+
+        const aaplHolding = result.holdings.find((h) => h.symbol === "AAPL");
+        // Individual holding values stay in USD (not converted)
+        expect(aaplHolding!.costBasis).toBe(1500);
+        expect(aaplHolding!.marketValue).toBe(1750);
+        expect(aaplHolding!.currencyCode).toBe("USD");
+      });
+    });
+
     describe("when user has standalone investment accounts", () => {
       beforeEach(() => {
         prefRepository.findOne.mockResolvedValue(mockPref);

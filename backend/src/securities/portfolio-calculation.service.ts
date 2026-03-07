@@ -328,7 +328,7 @@ export class PortfolioCalculationService {
    * Group enriched holdings by account, attaching cash balances and net-invested
    * figures. Returns an array of AccountHoldings sorted by total market value.
    */
-  buildHoldingsByAccount(
+  async buildHoldingsByAccount(
     categorised: CategorisedAccounts,
     holdingsWithValues: HoldingWithMarketValue[],
     effectiveBalances: Map<string, number>,
@@ -336,7 +336,8 @@ export class PortfolioCalculationService {
       string,
       { buys: number; sells: number; income: number }
     >,
-  ): AccountHoldings[] {
+    rateCache: Map<string, number>,
+  ): Promise<AccountHoldings[]> {
     // Group holdings by account
     const holdingsByAccountMap = new Map<string, HoldingWithMarketValue[]>();
     for (const holding of holdingsWithValues) {
@@ -359,15 +360,24 @@ export class PortfolioCalculationService {
           brokerageAccount.linkedAccountId === c.id,
       );
 
-      // Calculate account totals
-      const accountCostBasis = accountHoldings.reduce(
-        (sum, h) => sum + h.costBasis,
-        0,
-      );
-      const accountMarketValue = accountHoldings.reduce(
-        (sum, h) => sum + (h.marketValue ?? 0),
-        0,
-      );
+      // Calculate account totals (convert each holding to account currency)
+      const acctCurrency = brokerageAccount.currencyCode;
+      let accountCostBasis = 0;
+      let accountMarketValue = 0;
+      for (const h of accountHoldings) {
+        accountCostBasis += await this.convertToDefault(
+          h.costBasis,
+          h.currencyCode,
+          acctCurrency,
+          rateCache,
+        );
+        accountMarketValue += await this.convertToDefault(
+          h.marketValue ?? 0,
+          h.currencyCode,
+          acctCurrency,
+          rateCache,
+        );
+      }
       const accountGainLoss = accountMarketValue - accountCostBasis;
       const accountGainLossPercent =
         accountCostBasis > 0 ? (accountGainLoss / accountCostBasis) * 100 : 0;
@@ -407,15 +417,24 @@ export class PortfolioCalculationService {
       const accountHoldings =
         holdingsByAccountMap.get(standaloneAccount.id) || [];
 
-      // Calculate account totals
-      const accountCostBasis = accountHoldings.reduce(
-        (sum, h) => sum + h.costBasis,
-        0,
-      );
-      const accountMarketValue = accountHoldings.reduce(
-        (sum, h) => sum + (h.marketValue ?? 0),
-        0,
-      );
+      // Calculate account totals (convert each holding to account currency)
+      const standaloneCurrency = standaloneAccount.currencyCode;
+      let accountCostBasis = 0;
+      let accountMarketValue = 0;
+      for (const h of accountHoldings) {
+        accountCostBasis += await this.convertToDefault(
+          h.costBasis,
+          h.currencyCode,
+          standaloneCurrency,
+          rateCache,
+        );
+        accountMarketValue += await this.convertToDefault(
+          h.marketValue ?? 0,
+          h.currencyCode,
+          standaloneCurrency,
+          rateCache,
+        );
+      }
       const accountGainLoss = accountMarketValue - accountCostBasis;
       const accountGainLossPercent =
         accountCostBasis > 0 ? (accountGainLoss / accountCostBasis) * 100 : 0;

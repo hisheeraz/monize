@@ -53,6 +53,17 @@ vi.mock('@/lib/errors', () => ({
   getErrorMessage: (_e: any, fallback: string) => fallback,
 }));
 
+vi.mock('@/components/securities/SecurityForm', () => ({
+  SecurityForm: ({ onSubmit, onCancel }: { onSubmit: (data: any) => Promise<void>; onCancel: () => void }) => (
+    <div data-testid="security-form-modal">
+      <button onClick={() => { onSubmit({ symbol: 'TEST', name: 'Test Corp', securityType: 'STOCK', currencyCode: 'CAD' }).catch(() => {}); }}>
+        Create Security
+      </button>
+      <button onClick={onCancel}>Cancel</button>
+    </div>
+  ),
+}));
+
 describe('InvestmentTransactionForm', () => {
   const brokerageAccount = {
     id: 'a1',
@@ -159,31 +170,29 @@ describe('InvestmentTransactionForm', () => {
     });
   });
 
-  it('toggles new security form when clicking add new security link', async () => {
+  it('opens security modal when clicking add new security link', async () => {
     render(<InvestmentTransactionForm accounts={accounts} />);
 
     const addLink = await screen.findByText('+ Add new security');
     fireEvent.click(addLink);
 
-    expect(screen.getByText('Symbol')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('e.g., AAPL')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('e.g., Apple Inc.')).toBeInTheDocument();
-    expect(screen.getByText('Create Security')).toBeInTheDocument();
+    expect(screen.getByTestId('security-form-modal')).toBeInTheDocument();
+    expect(screen.getByText('New Security')).toBeInTheDocument();
 
-    // Click again to cancel
+    // Close modal via cancel
     fireEvent.click(screen.getByText('Cancel'));
-    expect(screen.queryByPlaceholderText('e.g., AAPL')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByTestId('security-form-modal')).not.toBeInTheDocument();
+    });
   });
 
-  it('handles create security with empty fields', async () => {
+  it('shows modal title when security form is open', async () => {
     render(<InvestmentTransactionForm accounts={accounts} />);
 
     const addLink = await screen.findByText('+ Add new security');
     fireEvent.click(addLink);
 
-    // Click Create Security without filling fields
-    fireEvent.click(screen.getByText('Create Security'));
-    expect(toast.error).toHaveBeenCalledWith('Symbol and name are required');
+    expect(screen.getByText('New Security')).toBeInTheDocument();
   });
 
   it('handles create security success', async () => {
@@ -192,17 +201,18 @@ describe('InvestmentTransactionForm', () => {
     const addLink = await screen.findByText('+ Add new security');
     fireEvent.click(addLink);
 
-    const symbolInput = screen.getByPlaceholderText('e.g., AAPL');
-    const nameInput = screen.getByPlaceholderText('e.g., Apple Inc.');
-    fireEvent.change(symbolInput, { target: { value: 'TEST' } });
-    fireEvent.change(nameInput, { target: { value: 'Test Corp' } });
-
+    // Submit the mocked SecurityForm
     fireEvent.click(screen.getByText('Create Security'));
 
     await waitFor(() => {
-      expect(investmentsApi.createSecurity).toHaveBeenCalled();
+      expect(investmentsApi.createSecurity).toHaveBeenCalledWith({
+        symbol: 'TEST', name: 'Test Corp', securityType: 'STOCK', currencyCode: 'CAD',
+      });
       expect(toast.success).toHaveBeenCalledWith('Security created');
     });
+
+    // Modal should close after success
+    expect(screen.queryByTestId('security-form-modal')).not.toBeInTheDocument();
   });
 
   it('handles create security failure', async () => {
@@ -213,14 +223,15 @@ describe('InvestmentTransactionForm', () => {
     const addLink = await screen.findByText('+ Add new security');
     fireEvent.click(addLink);
 
-    fireEvent.change(screen.getByPlaceholderText('e.g., AAPL'), { target: { value: 'FAIL' } });
-    fireEvent.change(screen.getByPlaceholderText('e.g., Apple Inc.'), { target: { value: 'Fail Corp' } });
-
+    // Submit the mocked SecurityForm (will trigger API error)
     fireEvent.click(screen.getByText('Create Security'));
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith('Failed to create security');
     });
+
+    // Modal should stay open on failure
+    expect(screen.getByTestId('security-form-modal')).toBeInTheDocument();
   });
 
   it('shows description field', async () => {

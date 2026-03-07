@@ -134,14 +134,9 @@ export function GroupedHoldingsList({
         {holdingsByAccount.map((account) => {
           const isExpanded = expandedAccounts.has(account.accountId);
           const accountTotalValue = account.totalMarketValue + account.cashBalance;
-          const isForeignAcct = account.currencyCode && account.currencyCode !== defaultCurrency;
-          // Also detect when account is in default currency but holds foreign securities
-          const foreignHoldingCurrencies = [...new Set(
-            account.holdings.map(h => h.currencyCode).filter(c => c && c !== defaultCurrency),
-          )];
-          const acctDisplayCurrency = isForeignAcct
+          const acctDisplayCurrency = account.currencyCode !== defaultCurrency
             ? account.currencyCode
-            : (foreignHoldingCurrencies.length === 1 ? foreignHoldingCurrencies[0] : null);
+            : null;
           const fmtAcct = (value: number | null) => {
             if (value === null) return '-';
             if (acctDisplayCurrency) return `${formatCurrencyBase(value, acctDisplayCurrency)} ${acctDisplayCurrency}`;
