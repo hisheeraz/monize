@@ -10,14 +10,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { UserPreferences, UpdatePreferencesData } from '@/types/auth';
 import { getErrorMessage } from '@/lib/errors';
 import { exchangeRatesApi, CurrencyInfo } from '@/lib/exchange-rates';
-
-const DATE_FORMAT_OPTIONS = [
-  { value: 'browser', label: 'Use browser locale (auto-detect)' },
-  { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD (2024-12-31)' },
-  { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY (12/31/2024)' },
-  { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY (31/12/2024)' },
-  { value: 'DD-MMM-YYYY', label: 'DD-MMM-YYYY (31-Dec-2024)' },
-];
+import { DATE_FORMAT_OPTIONS } from '@/lib/constants';
 
 const NUMBER_FORMAT_OPTIONS = [
   { value: 'browser', label: 'Use browser locale (auto-detect)' },

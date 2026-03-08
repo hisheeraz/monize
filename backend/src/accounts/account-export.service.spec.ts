@@ -329,7 +329,7 @@ describe("AccountExportService", () => {
       const lines = qif.split("\n");
 
       expect(lines[0]).toBe("!Type:Bank");
-      expect(lines).toContain("D01/15/2025");
+      expect(lines).toContain("D1/15/2025");
       expect(lines).toContain("T500");
       expect(lines).toContain("PEmployer");
       expect(lines).toContain("MJanuary pay");
@@ -402,6 +402,94 @@ describe("AccountExportService", () => {
 
         expect(qif).toBe(`!Type:${expected}`);
       }
+    });
+  });
+
+  describe("date formatting", () => {
+    it("formats CSV dates with specified dateFormat", async () => {
+      const transactions = buildMockTransactions();
+      const qb = createMockQueryBuilder(transactions);
+      mockTransactionRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const csv = await service.exportCsv(userId, accountId, {
+        dateFormat: "MM/DD/YYYY",
+      });
+      const lines = csv.split("\n");
+
+      expect(lines[1]).toContain("01/15/2025");
+      expect(lines[2]).toContain("01/20/2025");
+    });
+
+    it("formats CSV dates as DD/MM/YYYY", async () => {
+      const transactions = buildMockTransactions();
+      const qb = createMockQueryBuilder(transactions);
+      mockTransactionRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const csv = await service.exportCsv(userId, accountId, {
+        dateFormat: "DD/MM/YYYY",
+      });
+      const lines = csv.split("\n");
+
+      expect(lines[1]).toContain("15/01/2025");
+    });
+
+    it("formats CSV dates as DD-MMM-YYYY", async () => {
+      const transactions = buildMockTransactions();
+      const qb = createMockQueryBuilder(transactions);
+      mockTransactionRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const csv = await service.exportCsv(userId, accountId, {
+        dateFormat: "DD-MMM-YYYY",
+      });
+      const lines = csv.split("\n");
+
+      expect(lines[1]).toContain("15-Jan-2025");
+    });
+
+    it("formats CSV dates with custom format", async () => {
+      const transactions = buildMockTransactions();
+      const qb = createMockQueryBuilder(transactions);
+      mockTransactionRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const csv = await service.exportCsv(userId, accountId, {
+        dateFormat: "DD.MM.YYYY",
+      });
+      const lines = csv.split("\n");
+
+      expect(lines[1]).toContain("15.01.2025");
+    });
+
+    it("formats QIF dates with specified dateFormat", async () => {
+      const transactions = buildMockTransactions();
+      const qb = createMockQueryBuilder(transactions);
+      mockTransactionRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const qif = await service.exportQif(userId, accountId, {
+        dateFormat: "YYYY-MM-DD",
+      });
+
+      expect(qif).toContain("D2025-01-15");
+    });
+
+    it("defaults QIF dates to M/D/YYYY when no dateFormat", async () => {
+      const transactions = buildMockTransactions();
+      const qb = createMockQueryBuilder(transactions);
+      mockTransactionRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const qif = await service.exportQif(userId, accountId);
+
+      expect(qif).toContain("D1/15/2025");
+    });
+
+    it("defaults CSV dates to YYYY-MM-DD when no dateFormat", async () => {
+      const transactions = buildMockTransactions();
+      const qb = createMockQueryBuilder(transactions);
+      mockTransactionRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const csv = await service.exportCsv(userId, accountId);
+      const lines = csv.split("\n");
+
+      expect(lines[1]).toContain("2025-01-15");
     });
   });
 

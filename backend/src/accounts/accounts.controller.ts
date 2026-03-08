@@ -205,6 +205,13 @@ export class AccountsController {
     description:
       "Whether to expand split transactions into sub-rows (CSV only, defaults to true)",
   })
+  @ApiQuery({
+    name: "dateFormat",
+    required: false,
+    type: String,
+    description:
+      "Date format string (e.g. YYYY-MM-DD, MM/DD/YYYY, DD/MM/YYYY, DD-MMM-YYYY, or custom)",
+  })
   @ApiResponse({
     status: 200,
     description: "File downloaded successfully",
@@ -217,10 +224,20 @@ export class AccountsController {
     @Param("id", ParseUUIDPipe) id: string,
     @Query("format") format: string,
     @Query("expandSplits") expandSplits: string | undefined,
+    @Query("dateFormat") dateFormat: string | undefined,
     @Res() res: Response,
   ) {
     if (format !== "csv" && format !== "qif") {
       throw new BadRequestException("Format must be csv or qif");
+    }
+
+    if (dateFormat) {
+      if (dateFormat.length > 20) {
+        throw new BadRequestException("dateFormat is too long");
+      }
+      if (!/^[YMDymd/\-.' ]+$/.test(dateFormat)) {
+        throw new BadRequestException("Invalid dateFormat");
+      }
     }
 
     const account = await this.accountsService.findOne(req.user.id, id);
@@ -231,7 +248,7 @@ export class AccountsController {
       const content = await this.accountExportService.exportCsv(
         req.user.id,
         id,
-        { expandSplits: shouldExpandSplits },
+        { expandSplits: shouldExpandSplits, dateFormat },
       );
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader(
@@ -243,6 +260,7 @@ export class AccountsController {
       const content = await this.accountExportService.exportQif(
         req.user.id,
         id,
+        { dateFormat },
       );
       res.setHeader("Content-Type", "application/x-qif; charset=utf-8");
       res.setHeader(

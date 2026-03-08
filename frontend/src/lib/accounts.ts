@@ -138,10 +138,13 @@ export const accountsApi = {
   },
 
   // Export account transactions
-  exportAccount: async (id: string, format: 'csv' | 'qif', options?: { expandSplits?: boolean }): Promise<void> => {
+  exportAccount: async (id: string, format: 'csv' | 'qif', options?: { expandSplits?: boolean; dateFormat?: string }): Promise<void> => {
     const params: Record<string, string> = { format };
     if (options?.expandSplits === false) {
       params.expandSplits = 'false';
+    }
+    if (options?.dateFormat) {
+      params.dateFormat = options.dateFormat;
     }
     const response = await apiClient.get(`/accounts/${id}/export`, {
       params,

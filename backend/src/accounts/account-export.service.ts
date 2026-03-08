@@ -31,6 +31,11 @@ interface ExportSplit {
 
 interface CsvExportOptions {
   expandSplits?: boolean;
+  dateFormat?: string;
+}
+
+interface QifExportOptions {
+  dateFormat?: string;
 }
 
 @Injectable()
@@ -52,7 +57,7 @@ export class AccountExportService {
     accountId: string,
     options: CsvExportOptions = {},
   ): Promise<string> {
-    const { expandSplits = true } = options;
+    const { expandSplits = true, dateFormat = "YYYY-MM-DD" } = options;
     const account = await this.accountsService.findOne(userId, accountId);
     const transactions = await this.getExportTransactions(userId, accountId);
 
@@ -71,7 +76,7 @@ export class AccountExportService {
       if (tx.isSplit && expandSplits) {
         rows.push(
           this.csvRow(
-            tx.date,
+            this.formatExportDate(tx.date, dateFormat),
             tx.referenceNumber,
             tx.payeeName,
             "-- Split --",
@@ -106,7 +111,7 @@ export class AccountExportService {
             : tx.categoryPath;
         rows.push(
           this.csvRow(
-            tx.date,
+            this.formatExportDate(tx.date, dateFormat),
             tx.referenceNumber,
             tx.payeeName,
             categoryLabel,
@@ -122,7 +127,12 @@ export class AccountExportService {
     return rows.join("\n");
   }
 
-  async exportQif(userId: string, accountId: string): Promise<string> {
+  async exportQif(
+    userId: string,
+    accountId: string,
+    options: QifExportOptions = {},
+  ): Promise<string> {
+    const { dateFormat = "M/D/YYYY" } = options;
     const account = await this.accountsService.findOne(userId, accountId);
     const transactions = await this.getExportTransactions(userId, accountId);
 
@@ -130,7 +140,7 @@ export class AccountExportService {
     lines.push(`!Type:${this.accountTypeToQif(account.accountType)}`);
 
     for (const tx of transactions) {
-      lines.push(`D${this.formatQifDate(tx.date)}`);
+      lines.push(`D${this.formatExportDate(tx.date, dateFormat)}`);
       lines.push(`T${tx.amount}`);
 
       if (tx.payeeName) {
@@ -325,12 +335,73 @@ export class AccountExportService {
     }
   }
 
-  private formatQifDate(dateStr: string): string {
+  private formatExportDate(dateStr: string, format: string): string {
     const parts = dateStr.split("-");
-    if (parts.length === 3) {
-      const [year, month, day] = parts;
-      return `${month}/${day}/${year}`;
+    if (parts.length !== 3) {
+      return dateStr;
     }
-    return dateStr;
+
+    const [yearStr, monthStr, dayStr] = parts;
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    const day = parseInt(dayStr, 10);
+    const monthPadded = monthStr;
+    const dayPadded = dayStr;
+
+    const monthNames = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
+    const monthName = monthNames[month - 1] || "Jan";
+
+    switch (format) {
+      case "YYYY-MM-DD":
+        return `${yearStr}-${monthPadded}-${dayPadded}`;
+      case "MM/DD/YYYY":
+        return `${monthPadded}/${dayPadded}/${yearStr}`;
+      case "DD/MM/YYYY":
+        return `${dayPadded}/${monthPadded}/${yearStr}`;
+      case "DD-MMM-YYYY":
+        return `${dayPadded}-${monthName}-${yearStr}`;
+      case "M/D/YYYY":
+        return `${month}/${day}/${year}`;
+      default: {
+        // Custom format: token replacement using placeholders to avoid
+        // collisions (e.g. "D" matching the "D" in month name "Dec").
+        // Process longest tokens first within each letter group.
+        const tokens: Array<[string, string]> = [
+          ["YYYY", yearStr],
+          ["YY", yearStr.slice(2)],
+          ["MMM", monthName],
+          ["MM", monthPadded],
+          ["M", String(month)],
+          ["DD", dayPadded],
+          ["D", String(day)],
+        ];
+
+        // Replace tokens with indexed placeholders, then resolve
+        const placeholders: string[] = [];
+        let result = format;
+        for (const [token] of tokens) {
+          const placeholder = `{${placeholders.length}}`;
+          placeholders.push(placeholder);
+          result = result.split(token).join(placeholder);
+        }
+        for (let i = 0; i < tokens.length; i++) {
+          result = result.split(`{${i}}`).join(tokens[i][1]);
+        }
+        return result;
+      }
+    }
   }
 }

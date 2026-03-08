@@ -347,13 +347,14 @@ describe("AccountsController", () => {
         "account-1",
         "csv",
         undefined,
+        undefined,
         mockRes,
       );
 
       expect(mockExportService.exportCsv).toHaveBeenCalledWith(
         "user-1",
         "account-1",
-        { expandSplits: true },
+        { expandSplits: true, dateFormat: undefined },
       );
       expect(mockRes.setHeader).toHaveBeenCalledWith(
         "Content-Type",
@@ -377,13 +378,14 @@ describe("AccountsController", () => {
         "account-1",
         "csv",
         "false",
+        undefined,
         mockRes,
       );
 
       expect(mockExportService.exportCsv).toHaveBeenCalledWith(
         "user-1",
         "account-1",
-        { expandSplits: false },
+        { expandSplits: false, dateFormat: undefined },
       );
     });
 
@@ -398,13 +400,14 @@ describe("AccountsController", () => {
         "account-1",
         "csv",
         false as any,
+        undefined,
         mockRes,
       );
 
       expect(mockExportService.exportCsv).toHaveBeenCalledWith(
         "user-1",
         "account-1",
-        { expandSplits: false },
+        { expandSplits: false, dateFormat: undefined },
       );
     });
 
@@ -419,12 +422,14 @@ describe("AccountsController", () => {
         "account-1",
         "qif",
         undefined,
+        undefined,
         mockRes,
       );
 
       expect(mockExportService.exportQif).toHaveBeenCalledWith(
         "user-1",
         "account-1",
+        { dateFormat: undefined },
       );
       expect(mockRes.setHeader).toHaveBeenCalledWith(
         "Content-Type",
@@ -433,12 +438,83 @@ describe("AccountsController", () => {
       expect(mockRes.send).toHaveBeenCalledWith("qif-content");
     });
 
+    it("passes dateFormat to CSV export", async () => {
+      mockAccountsService.findOne!.mockResolvedValue({
+        name: "Chequing",
+      });
+      mockExportService.exportCsv!.mockResolvedValue("csv-content");
+
+      await controller.exportAccount(
+        mockReq,
+        "account-1",
+        "csv",
+        undefined,
+        "DD/MM/YYYY",
+        mockRes,
+      );
+
+      expect(mockExportService.exportCsv).toHaveBeenCalledWith(
+        "user-1",
+        "account-1",
+        { expandSplits: true, dateFormat: "DD/MM/YYYY" },
+      );
+    });
+
+    it("passes dateFormat to QIF export", async () => {
+      mockAccountsService.findOne!.mockResolvedValue({
+        name: "Chequing",
+      });
+      mockExportService.exportQif!.mockResolvedValue("qif-content");
+
+      await controller.exportAccount(
+        mockReq,
+        "account-1",
+        "qif",
+        undefined,
+        "YYYY-MM-DD",
+        mockRes,
+      );
+
+      expect(mockExportService.exportQif).toHaveBeenCalledWith(
+        "user-1",
+        "account-1",
+        { dateFormat: "YYYY-MM-DD" },
+      );
+    });
+
+    it("throws BadRequestException for invalid dateFormat characters", async () => {
+      await expect(
+        controller.exportAccount(
+          mockReq,
+          "account-1",
+          "csv",
+          undefined,
+          "YYYY<script>",
+          mockRes,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it("throws BadRequestException for dateFormat exceeding max length", async () => {
+      await expect(
+        controller.exportAccount(
+          mockReq,
+          "account-1",
+          "csv",
+          undefined,
+          "YYYY-MM-DD-YYYY-MM-DD-X",
+          mockRes,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it("throws BadRequestException for invalid format", async () => {
       await expect(
         controller.exportAccount(
           mockReq,
           "account-1",
           "xml",
+          undefined,
           undefined,
           mockRes,
         ),
@@ -455,6 +531,7 @@ describe("AccountsController", () => {
         mockReq,
         "account-1",
         "csv",
+        undefined,
         undefined,
         mockRes,
       );

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import '@/lib/zodConfig';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useState, useEffect, useMemo, useRef, MutableRefObject } from 'react';
+import { useState, useEffect, useMemo, MutableRefObject } from 'react';
 import { Input } from '@/components/ui/Input';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { Select } from '@/components/ui/Select';
@@ -23,6 +23,7 @@ import { getErrorMessage } from '@/lib/errors';
 import { LoanFields } from './LoanFields';
 import { MortgageFields } from './MortgageFields';
 import { AssetFields } from './AssetFields';
+import { AccountExportModal } from './AccountExportModal';
 
 import { useFormSubmitRef } from '@/hooks/useFormSubmitRef';
 import { useFormDirtyNotify } from '@/hooks/useFormDirtyNotify';
@@ -314,39 +315,7 @@ export function AccountForm({ account, onSubmit, onCancel, onDirtyChange, submit
     }
   };
 
-  const [isExporting, setIsExporting] = useState(false);
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const exportMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!showExportMenu) return;
-    function handleClickOutside(event: MouseEvent) {
-      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
-        setShowExportMenu(false);
-        setShowCsvSplitMenu(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showExportMenu]);
-
-  const [showCsvSplitMenu, setShowCsvSplitMenu] = useState(false);
-
-  const handleExport = async (format: 'csv' | 'qif', options?: { expandSplits?: boolean }) => {
-    if (!account || isExporting) return;
-    setShowExportMenu(false);
-    setShowCsvSplitMenu(false);
-    setIsExporting(true);
-    try {
-      await accountsApi.exportAccount(account.id, format, options);
-      toast.success(`Exported as ${format.toUpperCase()}`);
-    } catch (error) {
-      logger.error('Export failed', error);
-      toast.error(getErrorMessage(error, 'Failed to export account'));
-    } finally {
-      setIsExporting(false);
-    }
-  };
+  const [showExportModal, setShowExportModal] = useState(false);
 
   // Handle interest category selection (for loan/mortgage)
   const handleInterestCategoryChange = (categoryId: string) => {
@@ -641,87 +610,41 @@ export function AccountForm({ account, onSubmit, onCancel, onDirtyChange, submit
               </svg>
               <span className="hidden sm:inline text-sm text-gray-700 dark:text-gray-300">Import</span>
             </button>
-            <div className="relative" ref={exportMenuRef}>
-              <button
-                type="button"
-                onClick={() => { setShowExportMenu(!showExportMenu); setShowCsvSplitMenu(false); }}
-                disabled={isExporting}
-                className="flex items-center gap-1.5 px-2.5 py-2 rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                title="Export account transactions"
+            <button
+              type="button"
+              onClick={() => setShowExportModal(true)}
+              className="flex items-center gap-1.5 px-2.5 py-2 rounded-md border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              title="Export account transactions"
+            >
+              <svg
+                className="w-5 h-5 text-gray-500 dark:text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
               >
-                <svg
-                  className="w-5 h-5 text-gray-500 dark:text-gray-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                  />
-                </svg>
-                <span className="hidden sm:inline text-sm text-gray-700 dark:text-gray-300">Export</span>
-              </button>
-              {showExportMenu && (
-                <div className="absolute right-0 bottom-full mb-1 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg z-50">
-                  {!showCsvSplitMenu ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setShowCsvSplitMenu(true)}
-                        className="flex items-center justify-between w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-t-md"
-                      >
-                        <span>CSV</span>
-                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleExport('qif')}
-                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-b-md"
-                      >
-                        QIF
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setShowCsvSplitMenu(false)}
-                        className="flex items-center gap-1 w-full text-left px-4 py-2 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-t-md"
-                      >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                        </svg>
-                        Back
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleExport('csv', { expandSplits: true })}
-                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-                      >
-                        With split details
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleExport('csv', { expandSplits: false })}
-                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-b-md"
-                      >
-                        One line per transaction
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                />
+              </svg>
+              <span className="hidden sm:inline text-sm text-gray-700 dark:text-gray-300">Export</span>
+            </button>
           </div>
         )}
       </div>
 
       <FormActions onCancel={onCancel} submitLabel={account ? 'Update Account' : 'Create Account'} isSubmitting={isSubmitting} />
+
+      {account && (
+        <AccountExportModal
+          isOpen={showExportModal}
+          onClose={() => setShowExportModal(false)}
+          accountId={account.id}
+          accountName={account.name}
+        />
+      )}
     </form>
   );
 }
