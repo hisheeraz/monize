@@ -23,14 +23,7 @@ import { TrustedDevice } from "../users/entities/trusted-device.entity";
 import { RefreshToken } from "./entities/refresh-token.entity";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
-import {
-  encrypt,
-  decrypt,
-  isLegacyEncryption,
-  migrateFromLegacy,
-  derivePurposeKey,
-  hashToken,
-} from "./crypto.util";
+import { encrypt, decrypt, derivePurposeKey, hashToken } from "./crypto.util";
 import { PasswordBreachService } from "./password-breach.service";
 import { EmailService } from "../notifications/email.service";
 import { accountLockedTemplate } from "../notifications/email-templates";
@@ -90,7 +83,10 @@ export class AuthService {
     private emailService: EmailService,
   ) {
     this.jwtSecret = this.configService.get<string>("JWT_SECRET")!;
-    this.totpEncryptionKey = derivePurposeKey(this.jwtSecret, "totp-encryption");
+    this.totpEncryptionKey = derivePurposeKey(
+      this.jwtSecret,
+      "totp-encryption",
+    );
     this.csrfKey = derivePurposeKey(this.jwtSecret, "csrf-token");
   }
 
@@ -110,7 +106,10 @@ export class AuthService {
   } {
     // Try new purpose-derived key first
     try {
-      return { secret: decrypt(ciphertext, this.totpEncryptionKey), needsReEncrypt: false };
+      return {
+        secret: decrypt(ciphertext, this.totpEncryptionKey),
+        needsReEncrypt: false,
+      };
     } catch {
       // Fall back to raw jwtSecret (legacy data encrypted before key separation)
       const secret = decrypt(ciphertext, this.jwtSecret);
@@ -178,7 +177,11 @@ export class AuthService {
     };
   }
 
-  async login(loginDto: LoginDto, trustedDeviceToken?: string, userAgent?: string) {
+  async login(
+    loginDto: LoginDto,
+    trustedDeviceToken?: string,
+    userAgent?: string,
+  ) {
     const { email: rawEmail, password } = loginDto;
     const email = rawEmail.toLowerCase().trim();
 
@@ -424,7 +427,10 @@ export class AuthService {
     // Mark TOTP code as used to prevent replay
     if (isTotpCode) {
       const codeKey = `${user.id}:${code}`;
-      this.usedTotpCodes.set(codeKey, Date.now() + this.TOTP_CODE_REUSE_WINDOW_MS);
+      this.usedTotpCodes.set(
+        codeKey,
+        Date.now() + this.TOTP_CODE_REUSE_WINDOW_MS,
+      );
     }
 
     // Re-encrypt with purpose-derived key if still using old key material

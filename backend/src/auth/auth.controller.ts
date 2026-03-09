@@ -179,7 +179,11 @@ export class AuthController {
     }
     const trustedDeviceToken = req.cookies?.["trusted_device"];
     const userAgent = req.headers?.["user-agent"];
-    const result = await this.authService.login(loginDto, trustedDeviceToken, userAgent);
+    const result = await this.authService.login(
+      loginDto,
+      trustedDeviceToken,
+      userAgent,
+    );
 
     // If 2FA is required, return temp token without setting cookie
     if (result.requires2FA) {
@@ -270,9 +274,7 @@ export class AuthController {
       // SECURITY: If an existing local account needs confirmation before linking,
       // do NOT issue tokens. Redirect with a message instead.
       if (result.linkPending) {
-        res.redirect(
-          `${frontendUrl}/auth/callback?link=pending`,
-        );
+        res.redirect(`${frontendUrl}/auth/callback?link=pending`);
         return;
       }
 

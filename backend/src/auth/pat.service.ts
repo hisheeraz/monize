@@ -130,5 +130,4 @@ export class PatService {
 
     await this.patRepository.update(tokenId, { isRevoked: true });
   }
-
 }
