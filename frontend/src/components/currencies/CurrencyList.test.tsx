@@ -206,6 +206,47 @@ describe('CurrencyList', () => {
     expect(onDensityChange).toHaveBeenCalledWith('compact');
   });
 
+  describe('sorting', () => {
+    it('renders sortable column headers', () => {
+      const currencies = [makeCurrency({ code: 'CAD', name: 'Canadian Dollar' })];
+
+      render(<CurrencyList currencies={currencies} {...defaultProps} />);
+      const codeHeader = screen.getByText('Code');
+      const nameHeader = screen.getByText('Name');
+      expect(codeHeader.closest('th')).toBeInTheDocument();
+      expect(nameHeader.closest('th')).toBeInTheDocument();
+    });
+
+    it('calls onSort when a sortable column header is clicked', () => {
+      const onSort = vi.fn();
+      const currencies = [makeCurrency({ code: 'CAD', name: 'Canadian Dollar' })];
+
+      render(<CurrencyList currencies={currencies} {...defaultProps} onSort={onSort} sortField="code" sortDirection="asc" />);
+      fireEvent.click(screen.getByText('Name'));
+      expect(onSort).toHaveBeenCalledWith('name');
+    });
+
+    it('calls onSort with current field to toggle direction', () => {
+      const onSort = vi.fn();
+      const currencies = [makeCurrency({ code: 'CAD', name: 'Canadian Dollar' })];
+
+      render(<CurrencyList currencies={currencies} {...defaultProps} onSort={onSort} sortField="code" sortDirection="asc" />);
+      fireEvent.click(screen.getByText('Code'));
+      expect(onSort).toHaveBeenCalledWith('code');
+    });
+
+    it('uses local sort state when no onSort prop is provided', () => {
+      const currencies = [
+        makeCurrency({ code: 'CAD', name: 'Canadian Dollar' }),
+        makeCurrency({ code: 'USD', name: 'US Dollar' }),
+      ];
+
+      render(<CurrencyList currencies={currencies} {...defaultProps} />);
+      // Click Name header to sort - should not throw
+      fireEvent.click(screen.getByText('Name'));
+    });
+  });
+
   describe('long-press context menu', () => {
     beforeEach(() => {
       vi.useFakeTimers();

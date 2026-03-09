@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/Button';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -15,7 +15,7 @@ import dynamic from 'next/dynamic';
 import { investmentsApi } from '@/lib/investments';
 import { Security, CreateSecurityData, Holding } from '@/types/investment';
 const SecurityForm = dynamic(() => import('@/components/securities/SecurityForm').then(m => m.SecurityForm), { ssr: false });
-import { SecurityList, type SecurityHoldings } from '@/components/securities/SecurityList';
+import { SecurityList, type SecurityHoldings, type SecuritySortField, type SortDirection } from '@/components/securities/SecurityList';
 import { type DensityLevel } from '@/hooks/useTableDensity';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { createLogger } from '@/lib/logger';
@@ -39,9 +39,11 @@ function SecuritiesContent() {
   const [isLoading, setIsLoading] = useState(true);
   const { showForm, editingItem: editingSecurity, openCreate, openEdit, close, isEditing, modalProps, setFormDirty, unsavedChangesDialog, formSubmitRef } = useFormModal<Security>();
   const [searchQuery, setSearchQuery] = useState('');
-  const [showInactive, setShowInactive] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active');
   const [currentPage, setCurrentPage] = useState(1);
   const [listDensity, setListDensity] = useLocalStorage<DensityLevel>('monize-securities-density', 'normal');
+  const [sortField, setSortField] = useState<SecuritySortField>('symbol');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   const loadData = async () => {
     setIsLoading(true);
@@ -77,10 +79,11 @@ function SecuritiesContent() {
     }
   };
 
-  // Filter based on showInactive locally
-  const securities = useMemo(() => {
-    return showInactive ? allSecurities : allSecurities.filter((s) => s.isActive);
-  }, [allSecurities, showInactive]);
+  // Apply status filter
+  const statusFilteredSecurities = useMemo(() => {
+    if (statusFilter === 'all') return allSecurities;
+    return allSecurities.filter(s => statusFilter === 'active' ? s.isActive : !s.isActive);
+  }, [allSecurities, statusFilter]);
 
   useEffect(() => {
     loadData();
@@ -129,25 +132,54 @@ function SecuritiesContent() {
 
   // Filter securities by search query
   const filteredSecurities = useMemo(() => {
-    if (!searchQuery) return securities;
-    return securities.filter(
+    if (!searchQuery) return statusFilteredSecurities;
+    return statusFilteredSecurities.filter(
       (s) =>
         s.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }, [securities, searchQuery]);
+  }, [statusFilteredSecurities, searchQuery]);
+
+  // Sort
+  const sortedSecurities = useMemo(() => {
+    return [...filteredSecurities].sort((a, b) => {
+      let comparison = 0;
+      if (sortField === 'symbol') {
+        comparison = a.symbol.localeCompare(b.symbol, undefined, { sensitivity: 'base' });
+      } else if (sortField === 'name') {
+        comparison = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      } else if (sortField === 'type') {
+        comparison = (a.securityType || '').localeCompare(b.securityType || '', undefined, { sensitivity: 'base' });
+      } else if (sortField === 'exchange') {
+        comparison = (a.exchange || '').localeCompare(b.exchange || '', undefined, { sensitivity: 'base' });
+      } else if (sortField === 'currency') {
+        comparison = a.currencyCode.localeCompare(b.currencyCode, undefined, { sensitivity: 'base' });
+      }
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [filteredSecurities, sortField, sortDirection]);
 
   // Pagination logic
-  const totalPages = Math.ceil(filteredSecurities.length / PAGE_SIZE);
+  const totalPages = Math.ceil(sortedSecurities.length / PAGE_SIZE);
   const paginatedSecurities = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE;
-    return filteredSecurities.slice(start, start + PAGE_SIZE);
-  }, [filteredSecurities, currentPage]);
+    return sortedSecurities.slice(start, start + PAGE_SIZE);
+  }, [sortedSecurities, currentPage]);
 
   // Reset to page 1 when search or filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, showInactive]);
+  }, [searchQuery, statusFilter]);
+
+  const handleSort = useCallback((field: SecuritySortField) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+    setCurrentPage(1);
+  }, [sortField]);
 
   const goToPage = (page: number) => {
     if (page >= 1 && page <= totalPages) {
@@ -157,6 +189,10 @@ function SecuritiesContent() {
 
   const activeCount = allSecurities.filter((s) => s.isActive).length;
   const inactiveCount = allSecurities.filter((s) => !s.isActive).length;
+
+  const distinctTypes = useMemo(() => new Set(allSecurities.map(s => s.securityType).filter(Boolean)).size, [allSecurities]);
+  const distinctExchanges = useMemo(() => new Set(allSecurities.map(s => s.exchange).filter(Boolean)).size, [allSecurities]);
+  const distinctCurrencies = useMemo(() => new Set(allSecurities.map(s => s.currencyCode).filter(Boolean)).size, [allSecurities]);
 
   return (
     <PageLayout>
@@ -168,30 +204,45 @@ function SecuritiesContent() {
           actions={<Button onClick={handleCreateNew}>+ New Security</Button>}
         />
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
           <SummaryCard label="Total Securities" value={allSecurities.length} icon={SummaryIcons.barChart} />
-          <SummaryCard label="Active" value={activeCount} icon={SummaryIcons.checkCircle} valueColor="green" />
-          <SummaryCard label="Inactive" value={inactiveCount} icon={SummaryIcons.ban} />
+          <SummaryCard label="Types" value={distinctTypes} icon={SummaryIcons.tag} />
+          <SummaryCard label="Exchanges" value={distinctExchanges} icon={SummaryIcons.list} />
+          <SummaryCard label="Currencies" value={distinctCurrencies} icon={SummaryIcons.money} />
         </div>
 
-        {/* Search and Filters */}
+        {/* Search and Status Filter */}
         <div className="mb-6 flex flex-col sm:flex-row gap-4">
           <input
             type="text"
             placeholder="Search by symbol or name..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="block w-full max-w-md rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:focus:border-blue-400 dark:focus:ring-blue-400 font-sans"
+            className="block w-full sm:max-w-md rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:focus:border-blue-400 dark:focus:ring-blue-400"
           />
-          <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-            <input
-              type="checkbox"
-              checked={showInactive}
-              onChange={(e) => setShowInactive(e.target.checked)}
-              className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 dark:bg-gray-800"
-            />
-            Show inactive securities
-          </label>
+          <div className="flex rounded-md shadow-sm">
+            {(['all', 'active', 'inactive'] as const).map((status) => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`px-4 py-2 text-sm font-medium border ${
+                  statusFilter === status
+                    ? 'bg-blue-600 text-white border-blue-600 dark:bg-blue-500 dark:border-blue-500'
+                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                } ${
+                  status === 'all' ? 'rounded-l-md' : ''
+                } ${
+                  status === 'inactive' ? 'rounded-r-md' : ''
+                } ${
+                  status !== 'all' ? '-ml-px' : ''
+                }`}
+              >
+                {status === 'active' ? `Active (${activeCount})` :
+                 status === 'inactive' ? `Inactive (${inactiveCount})` :
+                 `All (${allSecurities.length})`}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Form Modal */}
@@ -221,6 +272,9 @@ function SecuritiesContent() {
               onToggleActive={handleToggleActive}
               density={listDensity}
               onDensityChange={setListDensity}
+              sortField={sortField}
+              sortDirection={sortDirection}
+              onSort={handleSort}
             />
           )}
         </div>
@@ -231,7 +285,7 @@ function SecuritiesContent() {
             <Pagination
               currentPage={currentPage}
               totalPages={totalPages}
-              totalItems={filteredSecurities.length}
+              totalItems={sortedSecurities.length}
               pageSize={PAGE_SIZE}
               onPageChange={goToPage}
               itemName="securities"
@@ -240,9 +294,9 @@ function SecuritiesContent() {
         )}
 
         {/* Show total count when only one page */}
-        {totalPages <= 1 && filteredSecurities.length > 0 && (
+        {totalPages <= 1 && sortedSecurities.length > 0 && (
           <div className="mt-4 text-sm text-gray-500 dark:text-gray-400 text-center">
-            {filteredSecurities.length} securit{filteredSecurities.length !== 1 ? 'ies' : 'y'}
+            {sortedSecurities.length} securit{sortedSecurities.length !== 1 ? 'ies' : 'y'}
           </div>
         )}
       </main>

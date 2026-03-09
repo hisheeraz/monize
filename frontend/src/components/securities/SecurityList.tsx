@@ -5,6 +5,10 @@ import { Security } from '@/types/investment';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { DensityLevel, nextDensity } from '@/hooks/useTableDensity';
+import { SortIcon } from '@/components/ui/SortIcon';
+
+export type SecuritySortField = 'symbol' | 'name' | 'type' | 'exchange' | 'currency';
+export type SortDirection = 'asc' | 'desc';
 
 // Map of securityId -> total quantity across all accounts
 export type SecurityHoldings = Record<string, number>;
@@ -16,6 +20,9 @@ interface SecurityListProps {
   onToggleActive: (security: Security) => void;
   density?: DensityLevel;
   onDensityChange?: (density: DensityLevel) => void;
+  sortField?: SecuritySortField;
+  sortDirection?: SortDirection;
+  onSort?: (field: SecuritySortField) => void;
 }
 
 interface SecurityRowProps {
@@ -161,11 +168,33 @@ export function SecurityList({
   onToggleActive,
   density: propDensity,
   onDensityChange,
+  sortField: propSortField,
+  sortDirection: propSortDirection,
+  onSort,
 }: SecurityListProps) {
   const [localDensity, setLocalDensity] = useState<DensityLevel>('normal');
+  const [localSortField, setLocalSortField] = useState<SecuritySortField>('symbol');
+  const [localSortDirection, setLocalSortDirection] = useState<SortDirection>('asc');
+
+  // Use prop sort state if provided (controlled), otherwise use local state
+  const sortField = propSortField ?? localSortField;
+  const sortDirection = propSortDirection ?? localSortDirection;
 
   // Use prop density if provided, otherwise use local state
   const density = propDensity ?? localDensity;
+
+  const handleSort = useCallback((field: SecuritySortField) => {
+    if (onSort) {
+      onSort(field);
+    } else {
+      if (localSortField === field) {
+        setLocalSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      } else {
+        setLocalSortField(field);
+        setLocalSortDirection('asc');
+      }
+    }
+  }, [onSort, localSortField]);
 
   // Long-press handling for context menu on mobile
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
@@ -287,22 +316,37 @@ export function SecurityList({
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-800">
             <tr>
-              <th className={`${headerPadding} text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider`}>
-                Symbol
+              <th
+                className={`${headerPadding} text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200`}
+                onClick={() => handleSort('symbol')}
+              >
+                Symbol<SortIcon field="symbol" sortField={sortField} sortDirection={sortDirection} />
               </th>
-              <th className={`${headerPadding} text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider`}>
-                Name
+              <th
+                className={`${headerPadding} text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200`}
+                onClick={() => handleSort('name')}
+              >
+                Name<SortIcon field="name" sortField={sortField} sortDirection={sortDirection} />
               </th>
-              <th className={`${headerPadding} text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider`}>
-                Type
+              <th
+                className={`${headerPadding} text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200`}
+                onClick={() => handleSort('type')}
+              >
+                Type<SortIcon field="type" sortField={sortField} sortDirection={sortDirection} />
               </th>
               {density === 'normal' && (
                 <>
-                  <th className={`${headerPadding} text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden sm:table-cell`}>
-                    Exchange
+                  <th
+                    className={`${headerPadding} text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 hidden sm:table-cell`}
+                    onClick={() => handleSort('exchange')}
+                  >
+                    Exchange<SortIcon field="exchange" sortField={sortField} sortDirection={sortDirection} />
                   </th>
-                  <th className={`${headerPadding} text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden sm:table-cell`}>
-                    Currency
+                  <th
+                    className={`${headerPadding} text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 hidden sm:table-cell`}
+                    onClick={() => handleSort('currency')}
+                  >
+                    Currency<SortIcon field="currency" sortField={sortField} sortDirection={sortDirection} />
                   </th>
                 </>
               )}

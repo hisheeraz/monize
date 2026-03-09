@@ -100,8 +100,11 @@ vi.mock('@/lib/investments', () => ({
 
 // Mock child components
 vi.mock('@/components/securities/SecurityList', () => ({
-  SecurityList: ({ securities, holdings, onEdit, onToggleActive }: any) => (
+  SecurityList: ({ securities, holdings, onEdit, onToggleActive, sortField, sortDirection, onSort }: any) => (
     <div data-testid="security-list">
+      {sortField && <span data-testid="sort-field">{sortField}</span>}
+      {sortDirection && <span data-testid="sort-direction">{sortDirection}</span>}
+      {onSort && <button data-testid="sort-trigger" onClick={() => onSort('name')}>Sort</button>}
       {securities.map((s: any) => (
         <div key={s.id} data-testid={`security-row-${s.symbol}`}>
           {s.name}
@@ -130,7 +133,7 @@ vi.mock('@/components/ui/LoadingSpinner', () => ({
 
 vi.mock('@/components/ui/SummaryCard', () => ({
   SummaryCard: ({ label, value }: any) => <div data-testid={`summary-${label}`}>{value}</div>,
-  SummaryIcons: { barChart: null, checkCircle: null, ban: null },
+  SummaryIcons: { barChart: null, tag: null, list: null, money: null },
 }));
 
 vi.mock('@/components/ui/Pagination', () => ({
@@ -193,8 +196,9 @@ describe('SecuritiesPage', () => {
     render(<SecuritiesPage />);
     await waitFor(() => {
       expect(screen.getByTestId('summary-Total Securities')).toBeInTheDocument();
-      expect(screen.getByTestId('summary-Active')).toBeInTheDocument();
-      expect(screen.getByTestId('summary-Inactive')).toBeInTheDocument();
+      expect(screen.getByTestId('summary-Types')).toBeInTheDocument();
+      expect(screen.getByTestId('summary-Exchanges')).toBeInTheDocument();
+      expect(screen.getByTestId('summary-Currencies')).toBeInTheDocument();
     });
   });
 
@@ -202,8 +206,41 @@ describe('SecuritiesPage', () => {
     render(<SecuritiesPage />);
     await waitFor(() => {
       expect(screen.getByTestId('summary-Total Securities')).toHaveTextContent('3');
-      expect(screen.getByTestId('summary-Active')).toHaveTextContent('2');
-      expect(screen.getByTestId('summary-Inactive')).toHaveTextContent('1');
+      expect(screen.getByTestId('summary-Types')).toHaveTextContent('3');
+      expect(screen.getByTestId('summary-Exchanges')).toHaveTextContent('2');
+      expect(screen.getByTestId('summary-Currencies')).toHaveTextContent('2');
+    });
+  });
+
+  it('excludes null values from distinct counts', async () => {
+    // BTC has exchange: null, so only 2 distinct exchanges (NASDAQ, TSX)
+    render(<SecuritiesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('summary-Exchanges')).toHaveTextContent('2');
+    });
+  });
+
+  it('shows correct distinct counts with single security', async () => {
+    mockGetSecurities.mockResolvedValue([
+      { id: 's1', symbol: 'AAPL', name: 'Apple Inc.', securityType: 'STOCK', exchange: 'NASDAQ', currencyCode: 'USD', isActive: true, skipPriceUpdates: false, createdAt: '2026-01-01', updatedAt: '2026-01-01' },
+    ]);
+    render(<SecuritiesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('summary-Total Securities')).toHaveTextContent('1');
+      expect(screen.getByTestId('summary-Types')).toHaveTextContent('1');
+      expect(screen.getByTestId('summary-Exchanges')).toHaveTextContent('1');
+      expect(screen.getByTestId('summary-Currencies')).toHaveTextContent('1');
+    });
+  });
+
+  it('shows zero distinct counts when no securities', async () => {
+    mockGetSecurities.mockResolvedValue([]);
+    render(<SecuritiesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('summary-Total Securities')).toHaveTextContent('0');
+      expect(screen.getByTestId('summary-Types')).toHaveTextContent('0');
+      expect(screen.getByTestId('summary-Exchanges')).toHaveTextContent('0');
+      expect(screen.getByTestId('summary-Currencies')).toHaveTextContent('0');
     });
   });
 
@@ -267,11 +304,23 @@ describe('SecuritiesPage', () => {
     });
   });
 
-  it('renders show inactive checkbox', async () => {
+  it('renders filter buttons for All, Active, Inactive with counts', async () => {
     render(<SecuritiesPage />);
     await waitFor(() => {
-      expect(screen.getByText('Show inactive securities')).toBeInTheDocument();
+      expect(screen.getByText(/All \(3\)/)).toBeInTheDocument();
+      expect(screen.getByText(/Active \(2\)/)).toBeInTheDocument();
+      expect(screen.getByText(/Inactive \(1\)/)).toBeInTheDocument();
     });
+  });
+
+  it('defaults to Active filter showing only active securities', async () => {
+    render(<SecuritiesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('security-list')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('security-row-AAPL')).toBeInTheDocument();
+    expect(screen.getByTestId('security-row-XEQT')).toBeInTheDocument();
+    expect(screen.queryByTestId('security-row-BTC')).not.toBeInTheDocument();
   });
 
   it('displays total count text for active securities', async () => {
@@ -281,15 +330,47 @@ describe('SecuritiesPage', () => {
     });
   });
 
-  it('shows inactive securities when checkbox is checked', async () => {
+  it('shows all securities when All button is clicked', async () => {
     render(<SecuritiesPage />);
     await waitFor(() => {
       expect(screen.getByTestId('security-list')).toBeInTheDocument();
     });
-    const checkbox = screen.getByRole('checkbox');
-    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByText(/All \(3\)/));
     await waitFor(() => {
+      expect(screen.getByTestId('security-row-AAPL')).toBeInTheDocument();
+      expect(screen.getByTestId('security-row-XEQT')).toBeInTheDocument();
       expect(screen.getByTestId('security-row-BTC')).toBeInTheDocument();
+    });
+  });
+
+  it('shows only inactive securities when Inactive button is clicked', async () => {
+    render(<SecuritiesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('security-list')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText(/Inactive \(1\)/));
+    await waitFor(() => {
+      expect(screen.queryByTestId('security-row-AAPL')).not.toBeInTheDocument();
+      expect(screen.getByTestId('security-row-BTC')).toBeInTheDocument();
+    });
+  });
+
+  it('passes sort props to SecurityList', async () => {
+    render(<SecuritiesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('sort-field')).toHaveTextContent('symbol');
+      expect(screen.getByTestId('sort-direction')).toHaveTextContent('asc');
+    });
+  });
+
+  it('passes onSort callback to SecurityList', async () => {
+    render(<SecuritiesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('sort-trigger')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId('sort-trigger'));
+    await waitFor(() => {
+      expect(screen.getByTestId('sort-field')).toHaveTextContent('name');
     });
   });
 

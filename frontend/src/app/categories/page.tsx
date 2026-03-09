@@ -35,6 +35,7 @@ function CategoriesContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isImporting, setIsImporting] = useState(false);
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [listDensity, setListDensity] = useLocalStorage<DensityLevel>('monize-categories-density', 'normal');
   const { showForm, editingItem, openCreate, openEdit, close, isEditing, modalProps, setFormDirty, unsavedChangesDialog, formSubmitRef } = useFormModal<Category>();
 
@@ -95,10 +96,17 @@ function CategoriesContent() {
     }
   };
 
-  const filteredCategories = useMemo(() => {
+  const typeFilteredCategories = useMemo(() => {
     if (filterType === 'all') return categories;
     return categories.filter((c) => (filterType === 'income' ? c.isIncome : !c.isIncome));
   }, [categories, filterType]);
+
+  const filteredCategories = useMemo(() => {
+    if (!searchQuery) return typeFilteredCategories;
+    return typeFilteredCategories.filter((c) =>
+      c.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [typeFilteredCategories, searchQuery]);
 
   const incomeCount = categories.filter((c) => c.isIncome).length;
   const expenseCount = categories.filter((c) => !c.isIncome).length;
@@ -140,41 +148,37 @@ function CategoriesContent() {
           />
         </div>
 
-        {/* Filter Tabs */}
-        <div className="mb-6">
-          <div className="border-b border-gray-200 dark:border-gray-700">
-            <nav className="-mb-px flex space-x-8">
+        {/* Search and Filter */}
+        <div className="mb-6 flex flex-col sm:flex-row gap-4">
+          <input
+            type="text"
+            placeholder="Search categories..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="block w-full sm:max-w-md rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:focus:border-blue-400 dark:focus:ring-blue-400"
+          />
+          <div className="flex rounded-md shadow-sm">
+            {(['all', 'expense', 'income'] as const).map((status) => (
               <button
-                onClick={() => setFilterType('all')}
-                className={`${
-                  filterType === 'all'
-                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
-                } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm`}
+                key={status}
+                onClick={() => setFilterType(status)}
+                className={`px-4 py-2 text-sm font-medium border ${
+                  filterType === status
+                    ? 'bg-blue-600 text-white border-blue-600 dark:bg-blue-500 dark:border-blue-500'
+                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                } ${
+                  status === 'all' ? 'rounded-l-md' : ''
+                } ${
+                  status === 'income' ? 'rounded-r-md' : ''
+                } ${
+                  status !== 'all' ? '-ml-px' : ''
+                }`}
               >
-                All ({categories.length})
+                {status === 'all' ? `All (${categories.length})` :
+                 status === 'expense' ? `Expenses (${expenseCount})` :
+                 `Income (${incomeCount})`}
               </button>
-              <button
-                onClick={() => setFilterType('expense')}
-                className={`${
-                  filterType === 'expense'
-                    ? 'border-red-500 text-red-600 dark:text-red-400'
-                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
-                } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm`}
-              >
-                Expense ({expenseCount})
-              </button>
-              <button
-                onClick={() => setFilterType('income')}
-                className={`${
-                  filterType === 'income'
-                    ? 'border-green-500 text-green-600 dark:text-green-400'
-                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
-                } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm`}
-              >
-                Income ({incomeCount})
-              </button>
-            </nav>
+            ))}
           </div>
         </div>
 

@@ -426,6 +426,49 @@ describe('SecurityList', () => {
     expect(onToggleActive).toHaveBeenCalledWith(expect.objectContaining({ isActive: false }));
   });
 
+  describe('sorting', () => {
+    it('renders sortable column headers', () => {
+      const securities = [makeSecurity()];
+
+      render(<SecurityList securities={securities} onEdit={onEdit} onToggleActive={onToggleActive} />);
+      const symbolHeader = screen.getByText('Symbol');
+      const nameHeader = screen.getByText('Name');
+      const typeHeader = screen.getByText('Type');
+      expect(symbolHeader.closest('th')).toBeInTheDocument();
+      expect(nameHeader.closest('th')).toBeInTheDocument();
+      expect(typeHeader.closest('th')).toBeInTheDocument();
+    });
+
+    it('calls onSort when a sortable column header is clicked', () => {
+      const onSort = vi.fn();
+      const securities = [makeSecurity()];
+
+      render(<SecurityList securities={securities} onEdit={onEdit} onToggleActive={onToggleActive} onSort={onSort} sortField="symbol" sortDirection="asc" />);
+      fireEvent.click(screen.getByText('Name'));
+      expect(onSort).toHaveBeenCalledWith('name');
+    });
+
+    it('calls onSort with current field to toggle direction', () => {
+      const onSort = vi.fn();
+      const securities = [makeSecurity()];
+
+      render(<SecurityList securities={securities} onEdit={onEdit} onToggleActive={onToggleActive} onSort={onSort} sortField="symbol" sortDirection="asc" />);
+      fireEvent.click(screen.getByText('Symbol'));
+      expect(onSort).toHaveBeenCalledWith('symbol');
+    });
+
+    it('uses local sort state when no onSort prop is provided', () => {
+      const securities = [
+        makeSecurity({ id: 's1', symbol: 'AAPL', name: 'Apple Inc.' }),
+        makeSecurity({ id: 's2', symbol: 'MSFT', name: 'Microsoft Corp.' }),
+      ];
+
+      render(<SecurityList securities={securities} onEdit={onEdit} onToggleActive={onToggleActive} />);
+      // Click Name header to sort - should not throw
+      fireEvent.click(screen.getByText('Name'));
+    });
+  });
+
   describe('long-press with touch events', () => {
     beforeEach(() => {
       vi.useFakeTimers();

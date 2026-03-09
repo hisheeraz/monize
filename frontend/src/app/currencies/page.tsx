@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/Button';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -14,7 +14,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import dynamic from 'next/dynamic';
 import { exchangeRatesApi, CurrencyInfo, CreateCurrencyData, CurrencyUsage } from '@/lib/exchange-rates';
 const CurrencyForm = dynamic(() => import('@/components/currencies/CurrencyForm').then(m => m.CurrencyForm), { ssr: false });
-import { CurrencyList } from '@/components/currencies/CurrencyList';
+import { CurrencyList, type CurrencySortField, type SortDirection } from '@/components/currencies/CurrencyList';
 import { type DensityLevel } from '@/hooks/useTableDensity';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useExchangeRates } from '@/hooks/useExchangeRates';
@@ -40,9 +40,11 @@ function CurrenciesContent() {
   const [isRefreshingRates, setIsRefreshingRates] = useState(false);
   const { showForm, editingItem: editingCurrency, openCreate, openEdit, close, isEditing, modalProps, setFormDirty, unsavedChangesDialog, formSubmitRef } = useFormModal<CurrencyInfo>();
   const [searchQuery, setSearchQuery] = useState('');
-  const [showInactive, setShowInactive] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active');
   const [currentPage, setCurrentPage] = useState(1);
   const [listDensity, setListDensity] = useLocalStorage<DensityLevel>('monize-currencies-density', 'normal');
+  const [sortField, setSortField] = useState<CurrencySortField>('code');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   const { defaultCurrency, getRate, refresh: refreshRates } = useExchangeRates();
 
@@ -128,37 +130,68 @@ function CurrenciesContent() {
     }
   };
 
-  // Filter by active/inactive, then sort: default currency first, then alphabetical
-  const currencies = useMemo(() => {
-    const filtered = showInactive ? allCurrencies : allCurrencies.filter((c) => c.isActive);
-    return [...filtered].sort((a, b) => {
-      if (a.code === defaultCurrency) return -1;
-      if (b.code === defaultCurrency) return 1;
-      return a.code.localeCompare(b.code);
-    });
-  }, [allCurrencies, showInactive, defaultCurrency]);
+  // Apply status filter
+  const statusFilteredCurrencies = useMemo(() => {
+    if (statusFilter === 'all') return allCurrencies;
+    return allCurrencies.filter(c => statusFilter === 'active' ? c.isActive : !c.isActive);
+  }, [allCurrencies, statusFilter]);
 
   // Filter by search
   const filteredCurrencies = useMemo(() => {
-    if (!searchQuery) return currencies;
+    if (!searchQuery) return statusFilteredCurrencies;
     const q = searchQuery.toLowerCase();
-    return currencies.filter(
+    return statusFilteredCurrencies.filter(
       (c) =>
         c.code.toLowerCase().includes(q) ||
         c.name.toLowerCase().includes(q)
     );
-  }, [currencies, searchQuery]);
+  }, [statusFilteredCurrencies, searchQuery]);
+
+  // Sort
+  const sortedCurrencies = useMemo(() => {
+    return [...filteredCurrencies].sort((a, b) => {
+      // Default currency always first
+      if (a.code === defaultCurrency) return -1;
+      if (b.code === defaultCurrency) return 1;
+
+      let comparison = 0;
+      if (sortField === 'code') {
+        comparison = a.code.localeCompare(b.code, undefined, { sensitivity: 'base' });
+      } else if (sortField === 'name') {
+        comparison = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      } else if (sortField === 'symbol') {
+        comparison = a.symbol.localeCompare(b.symbol, undefined, { sensitivity: 'base' });
+      } else if (sortField === 'decimals') {
+        comparison = a.decimalPlaces - b.decimalPlaces;
+      } else if (sortField === 'rate') {
+        const rateA = getRate(a.code) ?? 0;
+        const rateB = getRate(b.code) ?? 0;
+        comparison = rateA - rateB;
+      }
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [filteredCurrencies, sortField, sortDirection, defaultCurrency, getRate]);
 
   // Pagination
-  const totalPages = Math.ceil(filteredCurrencies.length / PAGE_SIZE);
+  const totalPages = Math.ceil(sortedCurrencies.length / PAGE_SIZE);
   const paginatedCurrencies = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE;
-    return filteredCurrencies.slice(start, start + PAGE_SIZE);
-  }, [filteredCurrencies, currentPage]);
+    return sortedCurrencies.slice(start, start + PAGE_SIZE);
+  }, [sortedCurrencies, currentPage]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, showInactive]);
+  }, [searchQuery, statusFilter]);
+
+  const handleSort = useCallback((field: CurrencySortField) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+    setCurrentPage(1);
+  }, [sortField]);
 
   const goToPage = (page: number) => {
     if (page >= 1 && page <= totalPages) {
@@ -198,24 +231,38 @@ function CurrenciesContent() {
           <SummaryCard label="Inactive" value={inactiveCount} icon={SummaryIcons.ban} />
         </div>
 
-        {/* Search and Filters */}
+        {/* Search and Status Filter */}
         <div className="mb-6 flex flex-col sm:flex-row gap-4">
           <input
             type="text"
             placeholder="Search by code or name..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="block w-full max-w-md rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:focus:border-blue-400 dark:focus:ring-blue-400 font-sans"
+            className="block w-full sm:max-w-md rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 dark:focus:border-blue-400 dark:focus:ring-blue-400"
           />
-          <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-            <input
-              type="checkbox"
-              checked={showInactive}
-              onChange={(e) => setShowInactive(e.target.checked)}
-              className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 dark:bg-gray-800"
-            />
-            Show inactive currencies
-          </label>
+          <div className="flex rounded-md shadow-sm">
+            {(['all', 'active', 'inactive'] as const).map((status) => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`px-4 py-2 text-sm font-medium border ${
+                  statusFilter === status
+                    ? 'bg-blue-600 text-white border-blue-600 dark:bg-blue-500 dark:border-blue-500'
+                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                } ${
+                  status === 'all' ? 'rounded-l-md' : ''
+                } ${
+                  status === 'inactive' ? 'rounded-r-md' : ''
+                } ${
+                  status !== 'all' ? '-ml-px' : ''
+                }`}
+              >
+                {status === 'active' ? `Active (${activeCount})` :
+                 status === 'inactive' ? `Inactive (${inactiveCount})` :
+                 `All (${allCurrencies.length})`}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Form Modal */}
@@ -248,6 +295,9 @@ function CurrenciesContent() {
               onRefresh={loadData}
               density={listDensity}
               onDensityChange={setListDensity}
+              sortField={sortField}
+              sortDirection={sortDirection}
+              onSort={handleSort}
             />
           )}
         </div>
@@ -258,7 +308,7 @@ function CurrenciesContent() {
             <Pagination
               currentPage={currentPage}
               totalPages={totalPages}
-              totalItems={filteredCurrencies.length}
+              totalItems={sortedCurrencies.length}
               pageSize={PAGE_SIZE}
               onPageChange={goToPage}
               itemName="currencies"
@@ -267,9 +317,9 @@ function CurrenciesContent() {
         )}
 
         {/* Show total count when only one page */}
-        {totalPages <= 1 && filteredCurrencies.length > 0 && (
+        {totalPages <= 1 && sortedCurrencies.length > 0 && (
           <div className="mt-4 text-sm text-gray-500 dark:text-gray-400 text-center">
-            {filteredCurrencies.length} currenc{filteredCurrencies.length !== 1 ? 'ies' : 'y'}
+            {sortedCurrencies.length} currenc{sortedCurrencies.length !== 1 ? 'ies' : 'y'}
           </div>
         )}
       </main>

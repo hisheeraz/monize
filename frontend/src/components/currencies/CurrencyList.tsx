@@ -11,6 +11,10 @@ import { createLogger } from '@/lib/logger';
 import { getErrorMessage } from '@/lib/errors';
 
 import { DensityLevel, nextDensity } from '@/hooks/useTableDensity';
+import { SortIcon } from '@/components/ui/SortIcon';
+
+export type CurrencySortField = 'code' | 'name' | 'symbol' | 'decimals' | 'rate';
+export type SortDirection = 'asc' | 'desc';
 
 const logger = createLogger('CurrencyList');
 
@@ -24,6 +28,9 @@ interface CurrencyListProps {
   onRefresh: () => void;
   density?: DensityLevel;
   onDensityChange?: (density: DensityLevel) => void;
+  sortField?: CurrencySortField;
+  sortDirection?: SortDirection;
+  onSort?: (field: CurrencySortField) => void;
 }
 
 interface CurrencyRowProps {
@@ -184,11 +191,33 @@ export function CurrencyList({
   onRefresh,
   density: propDensity,
   onDensityChange,
+  sortField: propSortField,
+  sortDirection: propSortDirection,
+  onSort,
 }: CurrencyListProps) {
   const [deleteCurrency, setDeleteCurrency] = useState<CurrencyInfo | null>(null);
   const [localDensity, setLocalDensity] = useState<DensityLevel>('normal');
+  const [localSortField, setLocalSortField] = useState<CurrencySortField>('code');
+  const [localSortDirection, setLocalSortDirection] = useState<SortDirection>('asc');
+
+  // Use prop sort state if provided (controlled), otherwise use local state
+  const sortField = propSortField ?? localSortField;
+  const sortDirection = propSortDirection ?? localSortDirection;
 
   const density = propDensity ?? localDensity;
+
+  const handleSort = useCallback((field: CurrencySortField) => {
+    if (onSort) {
+      onSort(field);
+    } else {
+      if (localSortField === field) {
+        setLocalSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      } else {
+        setLocalSortField(field);
+        setLocalSortDirection('asc');
+      }
+    }
+  }, [onSort, localSortField]);
 
   // Long-press handling for context menu on mobile
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
@@ -319,25 +348,40 @@ export function CurrencyList({
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-800">
             <tr>
-              <th className={`${headerPadding} text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider`}>
-                Code
+              <th
+                className={`${headerPadding} text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200`}
+                onClick={() => handleSort('code')}
+              >
+                Code<SortIcon field="code" sortField={sortField} sortDirection={sortDirection} />
               </th>
-              <th className={`${headerPadding} text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden sm:table-cell`}>
-                Name
+              <th
+                className={`${headerPadding} text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 hidden sm:table-cell`}
+                onClick={() => handleSort('name')}
+              >
+                Name<SortIcon field="name" sortField={sortField} sortDirection={sortDirection} />
               </th>
-              <th className={`${headerPadding} text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider`}>
-                Symbol
+              <th
+                className={`${headerPadding} text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200`}
+                onClick={() => handleSort('symbol')}
+              >
+                Symbol<SortIcon field="symbol" sortField={sortField} sortDirection={sortDirection} />
               </th>
               {density === 'normal' && (
-                <th className={`${headerPadding} text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden lg:table-cell`}>
-                  Decimals
+                <th
+                  className={`${headerPadding} text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200 hidden lg:table-cell`}
+                  onClick={() => handleSort('decimals')}
+                >
+                  Decimals<SortIcon field="decimals" sortField={sortField} sortDirection={sortDirection} />
                 </th>
               )}
               <th className={`${headerPadding} text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden sm:table-cell`}>
                 Usage
               </th>
-              <th className={`${headerPadding} text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider`}>
-                Rate ({defaultCurrency})
+              <th
+                className={`${headerPadding} text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200`}
+                onClick={() => handleSort('rate')}
+              >
+                Rate ({defaultCurrency})<SortIcon field="rate" sortField={sortField} sortDirection={sortDirection} />
               </th>
               <th className={`${headerPadding} text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider hidden sm:table-cell`}>
                 Status

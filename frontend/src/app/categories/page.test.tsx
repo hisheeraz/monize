@@ -264,30 +264,30 @@ describe('CategoriesPage', () => {
     });
   });
 
-  it('renders filter tabs for All, Expense, Income', async () => {
+  it('renders filter buttons for All, Expenses, Income with counts', async () => {
     mockGetAll.mockResolvedValue(mockCategories);
     render(<CategoriesPage />);
     await waitFor(() => {
       expect(screen.getByText(/All \(4\)/)).toBeInTheDocument();
-      expect(screen.getByText(/Expense \(3\)/)).toBeInTheDocument();
+      expect(screen.getByText(/Expenses \(3\)/)).toBeInTheDocument();
       expect(screen.getByText(/Income \(1\)/)).toBeInTheDocument();
     });
   });
 
-  it('filters to expense categories when Expense tab is clicked', async () => {
+  it('filters to expense categories when Expenses button is clicked', async () => {
     mockGetAll.mockResolvedValue(mockCategories);
     render(<CategoriesPage />);
     await waitFor(() => {
       expect(screen.getByTestId('category-list')).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByText(/Expense \(3\)/));
+    fireEvent.click(screen.getByText(/Expenses \(3\)/));
     await waitFor(() => {
       expect(screen.queryByTestId('category-cat-1')).not.toBeInTheDocument();
       expect(screen.getByTestId('category-cat-2')).toBeInTheDocument();
     });
   });
 
-  it('filters to income categories when Income tab is clicked', async () => {
+  it('filters to income categories when Income button is clicked', async () => {
     mockGetAll.mockResolvedValue(mockCategories);
     render(<CategoriesPage />);
     await waitFor(() => {
@@ -296,6 +296,56 @@ describe('CategoriesPage', () => {
     fireEvent.click(screen.getByText(/Income \(1\)/));
     await waitFor(() => {
       expect(screen.getByTestId('category-cat-1')).toBeInTheDocument();
+      expect(screen.queryByTestId('category-cat-2')).not.toBeInTheDocument();
+    });
+  });
+
+  it('renders search input', async () => {
+    mockGetAll.mockResolvedValue(mockCategories);
+    render(<CategoriesPage />);
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Search categories...')).toBeInTheDocument();
+    });
+  });
+
+  it('filters categories by search query', async () => {
+    mockGetAll.mockResolvedValue(mockCategories);
+    render(<CategoriesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('category-list')).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByPlaceholderText('Search categories...'), { target: { value: 'Salary' } });
+    await waitFor(() => {
+      expect(screen.getByTestId('category-cat-1')).toBeInTheDocument();
+      expect(screen.queryByTestId('category-cat-2')).not.toBeInTheDocument();
+    });
+  });
+
+  it('search is case-insensitive', async () => {
+    mockGetAll.mockResolvedValue(mockCategories);
+    render(<CategoriesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('category-list')).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByPlaceholderText('Search categories...'), { target: { value: 'salary' } });
+    await waitFor(() => {
+      expect(screen.getByTestId('category-cat-1')).toBeInTheDocument();
+    });
+  });
+
+  it('combines search with type filter', async () => {
+    mockGetAll.mockResolvedValue(mockCategories);
+    render(<CategoriesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('category-list')).toBeInTheDocument();
+    });
+    // Filter to expenses first
+    fireEvent.click(screen.getByText(/Expenses \(3\)/));
+    // Then search
+    fireEvent.change(screen.getByPlaceholderText('Search categories...'), { target: { value: 'Rent' } });
+    await waitFor(() => {
+      expect(screen.getByTestId('category-cat-3')).toBeInTheDocument();
+      expect(screen.queryByTestId('category-cat-1')).not.toBeInTheDocument();
       expect(screen.queryByTestId('category-cat-2')).not.toBeInTheDocument();
     });
   });

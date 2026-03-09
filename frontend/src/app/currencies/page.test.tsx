@@ -120,8 +120,11 @@ vi.mock('@/components/currencies/CurrencyForm', () => ({
 }));
 
 vi.mock('@/components/currencies/CurrencyList', () => ({
-  CurrencyList: ({ currencies, onToggleActive }: any) => (
+  CurrencyList: ({ currencies, onToggleActive, sortField, sortDirection, onSort }: any) => (
     <div data-testid="currency-list">
+      {sortField && <span data-testid="sort-field">{sortField}</span>}
+      {sortDirection && <span data-testid="sort-direction">{sortDirection}</span>}
+      {onSort && <button data-testid="sort-trigger" onClick={() => onSort('name')}>Sort</button>}
       {currencies.map((c: any) => (
         <div key={c.code} data-testid={`currency-row-${c.code}`}>
           {c.name}
@@ -286,10 +289,12 @@ describe('CurrenciesPage', () => {
     });
   });
 
-  it('renders show inactive checkbox', async () => {
+  it('renders filter buttons for All, Active, Inactive with counts', async () => {
     render(<CurrenciesPage />);
     await waitFor(() => {
-      expect(screen.getByText('Show inactive currencies')).toBeInTheDocument();
+      expect(screen.getByText(/All \(3\)/)).toBeInTheDocument();
+      expect(screen.getByText(/Active \(2\)/)).toBeInTheDocument();
+      expect(screen.getByText(/Inactive \(1\)/)).toBeInTheDocument();
     });
   });
 
@@ -298,6 +303,51 @@ describe('CurrenciesPage', () => {
     await waitFor(() => {
       // Only active currencies are shown by default (2 out of 3)
       expect(screen.getByText(/2 currencies/i)).toBeInTheDocument();
+    });
+  });
+
+  it('shows all currencies when All button is clicked', async () => {
+    render(<CurrenciesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('currency-list')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText(/All \(3\)/));
+    await waitFor(() => {
+      expect(screen.getByTestId('currency-row-CAD')).toBeInTheDocument();
+      expect(screen.getByTestId('currency-row-USD')).toBeInTheDocument();
+      expect(screen.getByTestId('currency-row-EUR')).toBeInTheDocument();
+    });
+  });
+
+  it('shows only inactive currencies when Inactive button is clicked', async () => {
+    render(<CurrenciesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('currency-list')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText(/Inactive \(1\)/));
+    await waitFor(() => {
+      expect(screen.queryByTestId('currency-row-CAD')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('currency-row-USD')).not.toBeInTheDocument();
+      expect(screen.getByTestId('currency-row-EUR')).toBeInTheDocument();
+    });
+  });
+
+  it('passes sort props to CurrencyList', async () => {
+    render(<CurrenciesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('sort-field')).toHaveTextContent('code');
+      expect(screen.getByTestId('sort-direction')).toHaveTextContent('asc');
+    });
+  });
+
+  it('passes onSort callback to CurrencyList', async () => {
+    render(<CurrenciesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('sort-trigger')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId('sort-trigger'));
+    await waitFor(() => {
+      expect(screen.getByTestId('sort-field')).toHaveTextContent('name');
     });
   });
 
