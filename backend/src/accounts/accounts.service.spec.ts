@@ -205,6 +205,35 @@ describe("AccountsService", () => {
       expect(createCall.openingBalance).toBe(0);
       expect(createCall.currentBalance).toBe(0);
     });
+
+    it("creates a credit card account with statement date fields", async () => {
+      await service.create("user-1", {
+        name: "Visa Card",
+        accountType: AccountType.CREDIT_CARD,
+        currencyCode: "USD",
+        creditLimit: 5000,
+        statementDueDay: 15,
+        statementSettlementDay: 25,
+      } as any);
+
+      const createCall = accountsRepository.create.mock.calls[0][0];
+      expect(createCall.statementDueDay).toBe(15);
+      expect(createCall.statementSettlementDay).toBe(25);
+      expect(createCall.accountType).toBe(AccountType.CREDIT_CARD);
+    });
+
+    it("creates a credit card account without statement date fields", async () => {
+      await service.create("user-1", {
+        name: "Mastercard",
+        accountType: AccountType.CREDIT_CARD,
+        currencyCode: "USD",
+        creditLimit: 10000,
+      } as any);
+
+      const createCall = accountsRepository.create.mock.calls[0][0];
+      expect(createCall.statementDueDay).toBeUndefined();
+      expect(createCall.statementSettlementDay).toBeUndefined();
+    });
   });
 
   describe("updateBalance", () => {
@@ -421,6 +450,41 @@ describe("AccountsService", () => {
 
       const saved = accountsRepository.save.mock.calls[0][0];
       expect(saved.amortizationMonths).toBe(360);
+    });
+
+    it("updates credit card statement date fields", async () => {
+      accountsRepository.findOne.mockResolvedValue({
+        ...mockAccount,
+        accountType: "CREDIT_CARD",
+        statementDueDay: null,
+        statementSettlementDay: null,
+      });
+
+      await service.update("user-1", "account-1", {
+        statementDueDay: 15,
+        statementSettlementDay: 25,
+      } as any);
+
+      const saved = accountsRepository.save.mock.calls[0][0];
+      expect(saved.statementDueDay).toBe(15);
+      expect(saved.statementSettlementDay).toBe(25);
+    });
+
+    it("updates only statementDueDay without affecting statementSettlementDay", async () => {
+      accountsRepository.findOne.mockResolvedValue({
+        ...mockAccount,
+        accountType: "CREDIT_CARD",
+        statementDueDay: 10,
+        statementSettlementDay: 20,
+      });
+
+      await service.update("user-1", "account-1", {
+        statementDueDay: 5,
+      } as any);
+
+      const saved = accountsRepository.save.mock.calls[0][0];
+      expect(saved.statementDueDay).toBe(5);
+      expect(saved.statementSettlementDay).toBe(20);
     });
   });
 

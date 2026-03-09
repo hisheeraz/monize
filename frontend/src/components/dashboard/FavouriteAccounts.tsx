@@ -5,6 +5,20 @@ import { Account } from '@/types/account';
 import { usePreferencesStore } from '@/store/preferencesStore';
 import { useNumberFormat } from '@/hooks/useNumberFormat';
 
+function getOrdinal(day: number): string {
+  const suffix =
+    day >= 11 && day <= 13
+      ? 'th'
+      : day % 10 === 1
+        ? 'st'
+        : day % 10 === 2
+          ? 'nd'
+          : day % 10 === 3
+            ? 'rd'
+            : 'th';
+  return `${day}${suffix}`;
+}
+
 interface FavouriteAccountsProps {
   accounts: Account[];
   isLoading: boolean;
@@ -83,6 +97,33 @@ export function FavouriteAccounts({ accounts, isLoading }: FavouriteAccountsProp
                 {account.institution && (
                   <div className="text-xs text-gray-500 dark:text-gray-400">
                     {account.institution}
+                  </div>
+                )}
+                {account.accountType === 'CREDIT_CARD' &&
+                  (account.statementDueDay || account.statementSettlementDay) && (
+                  <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    {account.statementDueDay && (
+                      <span className="flex items-center gap-0.5">
+                        Due: {getOrdinal(account.statementDueDay)}
+                        <span
+                          className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-400 text-[10px] cursor-help"
+                          title="The day of each month when your credit card payment is due"
+                        >
+                          ?
+                        </span>
+                      </span>
+                    )}
+                    {account.statementSettlementDay && (
+                      <span className="flex items-center gap-0.5">
+                        Settlement: {getOrdinal(account.statementSettlementDay)}
+                        <span
+                          className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-400 text-[10px] cursor-help"
+                          title="The last day of the billing cycle. Transactions posted on or before this day appear on the current statement."
+                        >
+                          ?
+                        </span>
+                      </span>
+                    )}
                   </div>
                 )}
               </div>

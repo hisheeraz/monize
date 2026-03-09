@@ -402,6 +402,11 @@ export class AccountsService {
       account.interestRate = updateAccountDto.interestRate;
     if (updateAccountDto.isFavourite !== undefined)
       account.isFavourite = updateAccountDto.isFavourite;
+    // Credit card statement fields
+    if (updateAccountDto.statementDueDay !== undefined)
+      account.statementDueDay = updateAccountDto.statementDueDay;
+    if (updateAccountDto.statementSettlementDay !== undefined)
+      account.statementSettlementDay = updateAccountDto.statementSettlementDay;
     if (updateAccountDto.paymentAmount !== undefined)
       account.paymentAmount = updateAccountDto.paymentAmount;
     if (updateAccountDto.paymentFrequency !== undefined)

@@ -71,6 +71,8 @@ I could easily add import capabilities for other filetypes, but I would need exa
 - Investment accounts with brokerage support
 - Support for multiple currencies per account
 - Track balances, credit limits, and interest rates
+- Credit card statement dates: configurable due date and settlement date (billing cycle closing date)
+- Favourite accounts on dashboard with credit card date indicators
 - Account reconciliation
 
 ### Transaction Management

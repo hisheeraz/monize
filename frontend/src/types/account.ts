@@ -40,6 +40,9 @@ export interface Account {
   isClosed: boolean;
   closedDate: string | null;
   isFavourite: boolean;
+  // Credit card statement fields
+  statementDueDay: number | null;
+  statementSettlementDay: number | null;
   // Loan-specific fields
   paymentAmount: number | null;
   paymentFrequency: PaymentFrequency | null;
@@ -75,6 +78,9 @@ export interface CreateAccountData {
   interestRate?: number;
   isFavourite?: boolean;
   createInvestmentPair?: boolean;
+  // Credit card statement fields
+  statementDueDay?: number;
+  statementSettlementDay?: number;
   // Loan-specific fields
   paymentAmount?: number;
   paymentFrequency?: PaymentFrequency;
