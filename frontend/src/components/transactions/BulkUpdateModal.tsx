@@ -130,6 +130,11 @@ export function BulkUpdateModal({
     if (enabled.payee) {
       if (selectedPayeeId) {
         updateData.payeeId = selectedPayeeId;
+        // Also send the payee name so the denormalized payeeName field is updated
+        const selectedPayee = payees.find(p => p.id === selectedPayeeId);
+        if (selectedPayee) {
+          updateData.payeeName = selectedPayee.name;
+        }
       } else if (payeeName) {
         updateData.payeeName = payeeName;
       } else {
