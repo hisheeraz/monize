@@ -730,8 +730,6 @@ describe("AuthService", () => {
   // ---------------------------------------------------------------
 
   describe("confirmSetup2FA", () => {
-    const jwtSecret = "test-jwt-secret-minimum-32-chars-long";
-
     it("validates code and enables 2FA in preferences", async () => {
       const encryptedSecret = encrypt("TESTSECRET", TEST_TOTP_KEY);
       usersRepository.findOne.mockResolvedValue({
@@ -825,8 +823,6 @@ describe("AuthService", () => {
   // ---------------------------------------------------------------
 
   describe("disable2FA", () => {
-    const jwtSecret = "test-jwt-secret-minimum-32-chars-long";
-
     it("validates code, clears secret, disables preferences, revokes trusted devices", async () => {
       const encryptedSecret = encrypt("TESTSECRET", TEST_TOTP_KEY);
       usersRepository.findOne.mockResolvedValue({
@@ -936,8 +932,6 @@ describe("AuthService", () => {
   // ---------------------------------------------------------------
 
   describe("verify2FA - success path", () => {
-    const jwtSecret = "test-jwt-secret-minimum-32-chars-long";
-
     it("returns tokens on valid code", async () => {
       const encryptedSecret = encrypt("TESTSECRET", TEST_TOTP_KEY);
       (jwtService.verify as jest.Mock).mockReturnValue({
@@ -2100,7 +2094,7 @@ describe("AuthService", () => {
   describe("login with trusted device bypassing 2FA", () => {
     it("bypasses 2FA when trustedDeviceToken is valid", async () => {
       const hashedPassword = await bcrypt.hash("ValidPass123!", 10);
-      const jwtSecret = "test-jwt-secret-minimum-32-chars-long";
+
       const encryptedSecret = encrypt("TESTSECRET", TEST_TOTP_KEY);
 
       usersRepository.findOne.mockResolvedValue({
@@ -2139,7 +2133,7 @@ describe("AuthService", () => {
 
     it("falls back to 2FA when trusted device is invalid", async () => {
       const hashedPassword = await bcrypt.hash("ValidPass123!", 10);
-      const jwtSecret = "test-jwt-secret-minimum-32-chars-long";
+
       const encryptedSecret = encrypt("TESTSECRET", TEST_TOTP_KEY);
 
       usersRepository.findOne.mockResolvedValue({
@@ -2166,7 +2160,7 @@ describe("AuthService", () => {
 
     it("does not check trusted device when no token provided", async () => {
       const hashedPassword = await bcrypt.hash("ValidPass123!", 10);
-      const jwtSecret = "test-jwt-secret-minimum-32-chars-long";
+
       const encryptedSecret = encrypt("TESTSECRET", TEST_TOTP_KEY);
 
       usersRepository.findOne.mockResolvedValue({
@@ -2194,8 +2188,6 @@ describe("AuthService", () => {
   // ---------------------------------------------------------------
 
   describe("verify2FA - attempt tracking (M4)", () => {
-    const jwtSecret = "test-jwt-secret-minimum-32-chars-long";
-
     beforeEach(() => {
       (jwtService.verify as jest.Mock).mockReturnValue({
         sub: "user-1",
@@ -2465,8 +2457,6 @@ describe("AuthService", () => {
   // ---------------------------------------------------------------
 
   describe("generateBackupCodes (L5)", () => {
-    const jwtSecret = "test-jwt-secret-minimum-32-chars-long";
-
     it("generates 12 backup codes", async () => {
       const encryptedSecret = encrypt("TESTSECRET", TEST_TOTP_KEY);
       usersRepository.findOne.mockResolvedValue({
@@ -2545,8 +2535,6 @@ describe("AuthService", () => {
   });
 
   describe("verify2FA with backup code (L5)", () => {
-    const jwtSecret = "test-jwt-secret-minimum-32-chars-long";
-
     function setupBackupCodeQueryRunner(backupCodes: string) {
       const mockSetFn = jest.fn().mockReturnThis();
       const mockQRManager = {
@@ -2821,8 +2809,6 @@ describe("AuthService", () => {
   // ---------------------------------------------------------------
 
   describe("verify2FA - per-user attempt tracking", () => {
-    const jwtSecret = "test-jwt-secret-minimum-32-chars-long";
-
     beforeEach(() => {
       (jwtService.verify as jest.Mock).mockReturnValue({
         sub: "user-1",
@@ -2940,8 +2926,6 @@ describe("AuthService", () => {
   // ---------------------------------------------------------------
 
   describe("verify2FA - atomic backup code consumption", () => {
-    const jwtSecret = "test-jwt-secret-minimum-32-chars-long";
-
     it("uses QueryRunner transaction for backup code removal", async () => {
       const encryptedSecret = encrypt("TESTSECRET", TEST_TOTP_KEY);
 

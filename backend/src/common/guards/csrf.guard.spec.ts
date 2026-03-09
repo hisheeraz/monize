@@ -5,6 +5,7 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { CsrfGuard } from "./csrf.guard";
 import { SKIP_CSRF_KEY } from "../decorators/skip-csrf.decorator";
 import { generateCsrfToken } from "../csrf.util";
+import { derivePurposeKey } from "../../auth/crypto.util";
 
 describe("CsrfGuard", () => {
   let guard: CsrfGuard;
@@ -194,7 +195,6 @@ describe("CsrfGuard", () => {
     let derivedCsrfKey: string;
 
     beforeEach(async () => {
-      const { derivePurposeKey } = require("../../auth/crypto.util");
       derivedCsrfKey = derivePurposeKey(jwtSecret, "csrf-token");
 
       const module: TestingModule = await Test.createTestingModule({
