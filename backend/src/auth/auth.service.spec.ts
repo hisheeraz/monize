@@ -14,6 +14,9 @@ import * as bcrypt from "bcryptjs";
 import * as otplib from "otplib";
 import * as QRCode from "qrcode";
 import { AuthService } from "./auth.service";
+import { TokenService } from "./token.service";
+import { TwoFactorService } from "./two-factor.service";
+import { AuthEmailService } from "./auth-email.service";
 import { User } from "../users/entities/user.entity";
 import { UserPreference } from "../users/entities/user-preference.entity";
 import { TrustedDevice } from "../users/entities/trusted-device.entity";
@@ -124,6 +127,9 @@ describe("AuthService", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
+        TokenService,
+        TwoFactorService,
+        AuthEmailService,
         { provide: getRepositoryToken(User), useValue: usersRepository },
         {
           provide: getRepositoryToken(UserPreference),
@@ -163,6 +169,19 @@ describe("AuthService", () => {
     // Spy on logger for security event logging tests (C2+C3)
     jest.spyOn((service as any).logger, "warn").mockImplementation();
     jest.spyOn((service as any).logger, "log").mockImplementation();
+
+    // Spy on delegated service loggers so tests asserting on log messages still pass
+    const twoFactorSvc = module.get<TwoFactorService>(TwoFactorService);
+    jest
+      .spyOn((twoFactorSvc as any).logger, "warn")
+      .mockImplementation((...args: any[]) =>
+        (service as any).logger.warn(...args),
+      );
+    jest
+      .spyOn((twoFactorSvc as any).logger, "log")
+      .mockImplementation((...args: any[]) =>
+        (service as any).logger.log(...args),
+      );
   });
 
   describe("register", () => {
