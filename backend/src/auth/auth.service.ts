@@ -4,18 +4,14 @@ import {
   ForbiddenException,
   BadRequestException,
   ConflictException,
-  NotFoundException,
   Logger,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { ConfigService } from "@nestjs/config";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, DeepPartial, LessThan, DataSource } from "typeorm";
-import { Cron, CronExpression } from "@nestjs/schedule";
+import { Repository, DeepPartial, DataSource } from "typeorm";
 import * as bcrypt from "bcryptjs";
 import * as crypto from "crypto";
-import * as otplib from "otplib";
-import * as QRCode from "qrcode";
 
 import { User } from "../users/entities/user.entity";
 import { UserPreference } from "../users/entities/user-preference.entity";
@@ -23,43 +19,22 @@ import { TrustedDevice } from "../users/entities/trusted-device.entity";
 import { RefreshToken } from "./entities/refresh-token.entity";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
-import {
-  encrypt,
-  decrypt,
-  isLegacyEncryption,
-  migrateFromLegacy,
-} from "./crypto.util";
+import { derivePurposeKey, hashToken } from "./crypto.util";
 import { PasswordBreachService } from "./password-breach.service";
 import { EmailService } from "../notifications/email.service";
 import { accountLockedTemplate } from "../notifications/email-templates";
-import { UAParser } from "ua-parser-js";
+import { TokenService } from "./token.service";
+import { TwoFactorService } from "./two-factor.service";
+import { AuthEmailService } from "./auth-email.service";
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private jwtSecret: string;
-  private readonly ACCESS_TOKEN_EXPIRY = "15m";
-  private readonly REFRESH_TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+  /** Derived key for CSRF HMAC -- cryptographically isolated from the JWT signing key */
+  private csrfKey: string;
   private readonly MAX_FAILED_ATTEMPTS = 5;
   private readonly BASE_LOCKOUT_MS = 30 * 60 * 1000; // 30 minutes
-  private readonly TRUSTED_DEVICE_EXPIRY_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
-  private readonly MAX_2FA_ATTEMPTS = 3;
-  private readonly MAX_USER_2FA_ATTEMPTS = 10;
-  private readonly BACKUP_CODE_COUNT = 12;
-  private readonly twoFactorAttempts = new Map<
-    string,
-    { count: number; expiresAt: number }
-  >();
-  private readonly user2FAAttempts = new Map<
-    string,
-    { count: number; expiresAt: number }
-  >();
-  private readonly forgotPasswordAttempts = new Map<
-    string,
-    { count: number; windowStart: number }
-  >();
-  private readonly FORGOT_PASSWORD_EMAIL_LIMIT = 3;
-  private readonly FORGOT_PASSWORD_EMAIL_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
   constructor(
     @InjectRepository(User)
@@ -75,8 +50,17 @@ export class AuthService {
     private dataSource: DataSource,
     private passwordBreachService: PasswordBreachService,
     private emailService: EmailService,
+    private tokenService: TokenService,
+    private twoFactorService: TwoFactorService,
+    private authEmailService: AuthEmailService,
   ) {
     this.jwtSecret = this.configService.get<string>("JWT_SECRET")!;
+    this.csrfKey = derivePurposeKey(this.jwtSecret, "csrf-token");
+  }
+
+  /** Get the derived CSRF key for use by the controller */
+  getCsrfKey(): string {
+    return this.csrfKey;
   }
 
   async register(registerDto: RegisterDto) {
@@ -123,7 +107,8 @@ export class AuthService {
       },
     );
 
-    const { accessToken, refreshToken } = await this.generateTokenPair(user);
+    const { accessToken, refreshToken } =
+      await this.tokenService.generateTokenPair(user);
 
     return {
       user: this.sanitizeUser(user),
@@ -132,7 +117,11 @@ export class AuthService {
     };
   }
 
-  async login(loginDto: LoginDto, trustedDeviceToken?: string) {
+  async login(
+    loginDto: LoginDto,
+    trustedDeviceToken?: string,
+    userAgent?: string,
+  ) {
     const { email: rawEmail, password } = loginDto;
     const email = rawEmail.toLowerCase().trim();
 
@@ -141,13 +130,13 @@ export class AuthService {
     });
 
     if (!user || !user.passwordHash) {
-      this.logger.warn(`Login failed: invalid credentials for email ${email}`);
+      this.logger.warn("Login failed: no matching account");
       throw new UnauthorizedException("Invalid credentials");
     }
 
     // Check account lockout
     if (user.lockedUntil && user.lockedUntil > new Date()) {
-      this.logger.warn(`Login failed: account locked for email ${email}`);
+      this.logger.warn(`Login failed: account locked for user ${user.id}`);
       throw new ForbiddenException(
         "Account is temporarily locked due to too many failed login attempts. Please try again later.",
       );
@@ -156,7 +145,7 @@ export class AuthService {
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
 
     if (!isPasswordValid) {
-      this.logger.warn(`Login failed: invalid password for email ${email}`);
+      this.logger.warn(`Login failed: invalid password for user ${user.id}`);
       // Atomically increment failed attempts
       const newAttempts = user.failedLoginAttempts + 1;
       const updateFields: Record<string, unknown> = {
@@ -170,7 +159,7 @@ export class AuthService {
         const lockoutDuration = this.BASE_LOCKOUT_MS * lockoutMultiplier;
         updateFields.lockedUntil = new Date(Date.now() + lockoutDuration);
         this.logger.warn(
-          `Account locked for email ${email} after ${newAttempts} failed attempts`,
+          `Account locked for user ${user.id} after ${newAttempts} failed attempts`,
         );
         // Fire-and-forget lockout email
         if (user.email) {
@@ -195,7 +184,7 @@ export class AuthService {
     }
 
     if (!user.isActive) {
-      this.logger.warn(`Login failed: account deactivated for email ${email}`);
+      this.logger.warn(`Login failed: account deactivated for user ${user.id}`);
       throw new UnauthorizedException("Account is deactivated");
     }
 
@@ -217,17 +206,18 @@ export class AuthService {
     if (preferences?.twoFactorEnabled && user.twoFactorSecret) {
       // Check for trusted device
       if (trustedDeviceToken) {
-        const isTrusted = await this.validateTrustedDevice(
+        const isTrusted = await this.twoFactorService.validateTrustedDevice(
           user.id,
           trustedDeviceToken,
+          userAgent,
         );
         if (isTrusted) {
           user.lastLogin = new Date();
           await this.usersRepository.save(user);
           const { accessToken, refreshToken } =
-            await this.generateTokenPair(user);
+            await this.tokenService.generateTokenPair(user);
           this.logger.log(
-            `Login successful (trusted device) for email ${email}`,
+            `Login successful (trusted device) for user ${user.id}`,
           );
           return { user: this.sanitizeUser(user), accessToken, refreshToken };
         }
@@ -238,7 +228,7 @@ export class AuthService {
         { sub: user.id, type: "2fa_pending" },
         { expiresIn: "5m" },
       );
-      this.logger.log(`Login requires 2FA for email ${email}`);
+      this.logger.log(`Login requires 2FA for user ${user.id}`);
       return { requires2FA: true, tempToken };
     }
 
@@ -246,296 +236,21 @@ export class AuthService {
     user.lastLogin = new Date();
     await this.usersRepository.save(user);
 
-    const { accessToken, refreshToken } = await this.generateTokenPair(user);
+    const { accessToken, refreshToken } =
+      await this.tokenService.generateTokenPair(user);
 
-    this.logger.log(`Login successful for email ${email}`);
+    this.logger.log(`Login successful for user ${user.id}`);
     return {
       user: this.sanitizeUser(user),
       accessToken,
       refreshToken,
     };
-  }
-
-  async verify2FA(
-    tempToken: string,
-    code: string,
-    rememberDevice = false,
-    userAgent?: string,
-    ipAddress?: string,
-  ) {
-    // M4: Check per-token attempt tracking before processing
-    this.cleanupExpired2FAAttempts();
-    const attemptRecord = this.twoFactorAttempts.get(tempToken);
-    if (attemptRecord && attemptRecord.count >= this.MAX_2FA_ATTEMPTS) {
-      throw new UnauthorizedException(
-        "Too many verification attempts. Please log in again.",
-      );
-    }
-
-    let payload: any;
-    try {
-      payload = this.jwtService.verify(tempToken);
-    } catch {
-      this.logger.warn("2FA verification failed: invalid or expired token");
-      throw new UnauthorizedException("Invalid or expired verification token");
-    }
-
-    if (payload.type !== "2fa_pending") {
-      this.logger.warn(
-        `2FA verification failed: invalid token type for user ${payload.sub}`,
-      );
-      throw new UnauthorizedException("Invalid token type");
-    }
-
-    // Per-user rate limiting: prevents brute-force multiplication via multiple tempTokens
-    const userAttemptRecord = this.user2FAAttempts.get(payload.sub);
-    if (
-      userAttemptRecord &&
-      userAttemptRecord.count >= this.MAX_USER_2FA_ATTEMPTS
-    ) {
-      this.logger.warn(
-        `2FA verification blocked: too many attempts for user ${payload.sub}`,
-      );
-      throw new UnauthorizedException(
-        "Too many verification attempts. Your account has been temporarily locked.",
-      );
-    }
-
-    const user = await this.usersRepository.findOne({
-      where: { id: payload.sub },
-    });
-
-    if (!user || !user.twoFactorSecret) {
-      this.logger.warn(
-        `2FA verification failed: invalid state for user ${payload.sub}`,
-      );
-      throw new UnauthorizedException("Invalid verification state");
-    }
-
-    const secret = decrypt(user.twoFactorSecret, this.jwtSecret);
-
-    // L5: Try TOTP for 6-digit codes, backup codes for XXXX-XXXX format
-    let isValid = false;
-    if (/^\d{6}$/.test(code)) {
-      isValid = otplib.verifySync({ token: code, secret }).valid;
-    } else if (user.backupCodes) {
-      isValid = await this.verifyBackupCode(user, code);
-    }
-
-    if (!isValid) {
-      // Track failed attempt per-token
-      const existing = this.twoFactorAttempts.get(tempToken);
-      const newCount = (existing?.count ?? 0) + 1;
-      this.twoFactorAttempts.set(tempToken, {
-        count: newCount,
-        expiresAt: Date.now() + 5 * 60 * 1000,
-      });
-
-      // Track failed attempt per-user
-      const existingUser = this.user2FAAttempts.get(payload.sub);
-      const newUserCount = (existingUser?.count ?? 0) + 1;
-      this.user2FAAttempts.set(payload.sub, {
-        count: newUserCount,
-        expiresAt: Date.now() + 5 * 60 * 1000,
-      });
-
-      // Lock account after exceeding per-user threshold
-      if (newUserCount >= this.MAX_USER_2FA_ATTEMPTS) {
-        await this.usersRepository
-          .createQueryBuilder()
-          .update(User)
-          .set({ lockedUntil: new Date(Date.now() + this.BASE_LOCKOUT_MS) })
-          .where("id = :id", { id: user.id })
-          .execute();
-        this.logger.warn(
-          `Account locked after ${newUserCount} failed 2FA attempts for user ${user.id}`,
-        );
-      }
-
-      this.logger.warn(
-        `2FA verification failed: invalid code for user ${user.id}`,
-      );
-      throw new UnauthorizedException("Invalid verification code");
-    }
-
-    // M4: Clear attempt tracking on success
-    this.twoFactorAttempts.delete(tempToken);
-    this.user2FAAttempts.delete(payload.sub);
-
-    // M8: Migrate legacy TOTP encryption if needed
-    if (isLegacyEncryption(user.twoFactorSecret)) {
-      const migrated = migrateFromLegacy(user.twoFactorSecret, this.jwtSecret);
-      if (migrated) {
-        user.twoFactorSecret = migrated;
-      }
-    }
-
-    // Update last login
-    user.lastLogin = new Date();
-    await this.usersRepository.save(user);
-    this.logger.log(`2FA verification successful for user ${user.id}`);
-
-    const { accessToken, refreshToken } = await this.generateTokenPair(user);
-
-    let trustedDeviceToken: string | undefined;
-    if (rememberDevice) {
-      trustedDeviceToken = await this.createTrustedDevice(
-        user.id,
-        userAgent || "Unknown Device",
-        ipAddress,
-      );
-    }
-
-    return {
-      user: this.sanitizeUser(user),
-      accessToken,
-      refreshToken,
-      trustedDeviceToken,
-    };
-  }
-
-  private cleanupExpired2FAAttempts(): void {
-    const now = Date.now();
-    for (const [key, value] of this.twoFactorAttempts.entries()) {
-      if (value.expiresAt <= now) {
-        this.twoFactorAttempts.delete(key);
-      }
-    }
-    for (const [key, value] of this.user2FAAttempts.entries()) {
-      if (value.expiresAt <= now) {
-        this.user2FAAttempts.delete(key);
-      }
-    }
-  }
-
-  async setup2FA(userId: string) {
-    const user = await this.usersRepository.findOne({
-      where: { id: userId },
-    });
-
-    if (!user) {
-      throw new NotFoundException("User not found");
-    }
-
-    if (user.authProvider === "oidc") {
-      throw new BadRequestException(
-        "Two-factor authentication is not available for SSO accounts",
-      );
-    }
-
-    const secret = otplib.generateSecret();
-    const otpauthUrl = otplib.generateURI({
-      secret,
-      issuer: "Monize",
-      label: user.email || userId,
-    });
-    const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl);
-
-    // H5: Store in pending field, only commit after confirmation
-    user.pendingTwoFactorSecret = encrypt(secret, this.jwtSecret);
-    await this.usersRepository.save(user);
-
-    return { secret, qrCodeDataUrl, otpauthUrl };
-  }
-
-  async confirmSetup2FA(userId: string, code: string) {
-    const user = await this.usersRepository.findOne({
-      where: { id: userId },
-    });
-
-    if (!user || !user.pendingTwoFactorSecret) {
-      throw new BadRequestException("2FA setup not initiated");
-    }
-
-    const secret = decrypt(user.pendingTwoFactorSecret, this.jwtSecret);
-    const isValid = otplib.verifySync({ token: code, secret }).valid;
-
-    if (!isValid) {
-      throw new BadRequestException("Invalid verification code");
-    }
-
-    // H5: Promote pending secret to active secret on successful confirmation
-    user.twoFactorSecret = user.pendingTwoFactorSecret;
-    user.pendingTwoFactorSecret = null;
-    await this.usersRepository.save(user);
-
-    // Enable 2FA in preferences
-    let preferences = await this.preferencesRepository.findOne({
-      where: { userId },
-    });
-
-    if (!preferences) {
-      preferences = this.preferencesRepository.create({ userId });
-    }
-
-    preferences.twoFactorEnabled = true;
-    await this.preferencesRepository.save(preferences);
-
-    return { message: "Two-factor authentication enabled successfully" };
-  }
-
-  async disable2FA(userId: string, code: string) {
-    const force2fa =
-      this.configService.get<string>("FORCE_2FA", "false").toLowerCase() ===
-      "true";
-    if (force2fa) {
-      throw new ForbiddenException(
-        "Two-factor authentication is required by the administrator",
-      );
-    }
-
-    const user = await this.usersRepository.findOne({
-      where: { id: userId },
-    });
-
-    if (!user || !user.twoFactorSecret) {
-      throw new BadRequestException("2FA is not enabled");
-    }
-
-    const secret = decrypt(user.twoFactorSecret, this.jwtSecret);
-    const isValid = otplib.verifySync({ token: code, secret }).valid;
-
-    if (!isValid) {
-      throw new BadRequestException("Invalid verification code");
-    }
-
-    // Clear secret and disable
-    user.twoFactorSecret = null;
-    await this.usersRepository.save(user);
-
-    const preferences = await this.preferencesRepository.findOne({
-      where: { userId },
-    });
-
-    if (preferences) {
-      preferences.twoFactorEnabled = false;
-      await this.preferencesRepository.save(preferences);
-    }
-
-    // Revoke all trusted devices
-    await this.trustedDevicesRepository.delete({ userId });
-
-    return { message: "Two-factor authentication disabled successfully" };
-  }
-
-  async validateUser(email: string, password: string): Promise<any> {
-    const user = await this.usersRepository.findOne({
-      where: { email: email.toLowerCase().trim() },
-    });
-
-    if (user && user.passwordHash) {
-      const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
-      if (isPasswordValid && user.isActive) {
-        return this.sanitizeUser(user);
-      }
-    }
-    return null;
   }
 
   async findOrCreateOidcUser(
     userInfo: Record<string, unknown>,
     registrationEnabled = true,
-  ) {
+  ): Promise<{ user: User; linkPending?: boolean }> {
     // Standard OIDC claims
     const sub = userInfo.sub as string;
     const rawEmail = userInfo.email as string | undefined;
@@ -569,7 +284,6 @@ export class AuthService {
 
     if (!user) {
       // SECURITY: Only link to existing account if email is verified by OIDC provider
-      // This prevents account takeover via OIDC providers that don't verify emails
       // M6: If the existing account has a password (local account), require confirmation
       if (trustedEmail) {
         const existingUser = await this.usersRepository.findOne({
@@ -578,13 +292,13 @@ export class AuthService {
 
         if (existingUser) {
           if (existingUser.passwordHash) {
-            // M6: Local account requires user confirmation before linking
-            await this.initiateOidcLink(existingUser, sub);
+            // SECURITY: Local account requires user confirmation before linking.
+            const linkToken = await this.initiateOidcLink(existingUser, sub);
             this.logger.warn(
               `OIDC link pending confirmation for user ${existingUser.id}`,
             );
-            // Return the existing user without completing the link
-            user = existingUser;
+            await this.sendOidcLinkEmail(existingUser, linkToken);
+            return { user: existingUser, linkPending: true };
           } else {
             // OIDC-only account -- safe to link directly
             existingUser.oidcSubject = sub;
@@ -619,19 +333,22 @@ export class AuthService {
           );
         } catch (err: any) {
           // Handle duplicate email: link OIDC to the existing account
-          // SECURITY: Only link accounts when the OIDC provider has verified the email
           if (err.code === "23505" && trustedEmail) {
             const existingUser = await this.usersRepository.findOne({
               where: { email: trustedEmail },
             });
             if (existingUser) {
               if (existingUser.passwordHash) {
-                // M6: Local account requires user confirmation before linking
-                await this.initiateOidcLink(existingUser, sub);
+                // SECURITY: Local account requires confirmation
+                const linkToken = await this.initiateOidcLink(
+                  existingUser,
+                  sub,
+                );
                 this.logger.warn(
                   `OIDC link pending confirmation (catch path) for user ${existingUser.id}`,
                 );
-                user = existingUser;
+                await this.sendOidcLinkEmail(existingUser, linkToken);
+                return { user: existingUser, linkPending: true };
               } else {
                 // OIDC-only account -- safe to link directly
                 existingUser.oidcSubject = sub;
@@ -702,484 +419,16 @@ export class AuthService {
     user.lastLogin = new Date();
     await this.usersRepository.save(user);
 
-    return user;
+    return { user };
   }
 
   async validateOidcUser(profile: any): Promise<any> {
-    const user = await this.findOrCreateOidcUser(profile);
-    return this.sanitizeUser(user);
-  }
-
-  async generateTokenPair(
-    user: User,
-  ): Promise<{ accessToken: string; refreshToken: string }> {
-    const payload = {
-      sub: user.id,
-      email: user.email,
-      authProvider: user.authProvider,
-      role: user.role,
-    };
-    const accessToken = this.jwtService.sign(payload, {
-      expiresIn: this.ACCESS_TOKEN_EXPIRY,
-    });
-
-    const rawRefreshToken = crypto.randomBytes(64).toString("hex");
-    const tokenHash = this.hashToken(rawRefreshToken);
-    const familyId = crypto.randomUUID();
-
-    const refreshTokenEntity = this.refreshTokensRepository.create({
-      userId: user.id,
-      tokenHash,
-      familyId,
-      isRevoked: false,
-      expiresAt: new Date(Date.now() + this.REFRESH_TOKEN_EXPIRY_MS),
-      replacedByHash: null,
-    });
-    await this.refreshTokensRepository.save(refreshTokenEntity);
-
-    return { accessToken, refreshToken: rawRefreshToken };
-  }
-
-  async refreshTokens(
-    rawRefreshToken: string,
-  ): Promise<{ accessToken: string; refreshToken: string; userId: string }> {
-    const tokenHash = this.hashToken(rawRefreshToken);
-
-    return this.dataSource.transaction(async (manager) => {
-      // SECURITY: Pessimistic lock prevents race condition when two requests
-      // try to rotate the same refresh token concurrently
-      const existingToken = await manager.findOne(RefreshToken, {
-        where: { tokenHash },
-        lock: { mode: "pessimistic_write" },
-      });
-
-      if (!existingToken) {
-        throw new UnauthorizedException("Invalid refresh token");
-      }
-
-      // Replay detection: if token is revoked, a previously-rotated token was reused
-      if (existingToken.isRevoked) {
-        await manager.update(
-          RefreshToken,
-          { familyId: existingToken.familyId },
-          { isRevoked: true },
-        );
-        throw new UnauthorizedException("Refresh token reuse detected");
-      }
-
-      if (existingToken.expiresAt < new Date()) {
-        existingToken.isRevoked = true;
-        await manager.save(existingToken);
-        throw new UnauthorizedException("Refresh token expired");
-      }
-
-      const user = await manager.findOne(User, {
-        where: { id: existingToken.userId },
-      });
-
-      if (!user || !user.isActive) {
-        await manager.update(
-          RefreshToken,
-          { familyId: existingToken.familyId },
-          { isRevoked: true },
-        );
-        throw new UnauthorizedException("User not found or inactive");
-      }
-
-      // Rotate: generate new refresh token in the same family
-      const newRawRefreshToken = crypto.randomBytes(64).toString("hex");
-      const newTokenHash = this.hashToken(newRawRefreshToken);
-
-      existingToken.isRevoked = true;
-      existingToken.replacedByHash = newTokenHash;
-      await manager.save(existingToken);
-
-      const newRefreshTokenEntity = manager.create(RefreshToken, {
-        userId: user.id,
-        tokenHash: newTokenHash,
-        familyId: existingToken.familyId,
-        isRevoked: false,
-        expiresAt: new Date(Date.now() + this.REFRESH_TOKEN_EXPIRY_MS),
-        replacedByHash: null,
-      });
-      await manager.save(newRefreshTokenEntity);
-
-      const payload = {
-        sub: user.id,
-        email: user.email,
-        authProvider: user.authProvider,
-        role: user.role,
-      };
-      const accessToken = this.jwtService.sign(payload, {
-        expiresIn: this.ACCESS_TOKEN_EXPIRY,
-      });
-
-      return { accessToken, refreshToken: newRawRefreshToken, userId: user.id };
-    });
-  }
-
-  async revokeTokenFamily(familyId: string): Promise<void> {
-    await this.refreshTokensRepository.update(
-      { familyId },
-      { isRevoked: true },
-    );
-  }
-
-  async revokeRefreshToken(rawRefreshToken: string): Promise<void> {
-    if (!rawRefreshToken) return;
-    const tokenHash = this.hashToken(rawRefreshToken);
-    const token = await this.refreshTokensRepository.findOne({
-      where: { tokenHash },
-    });
-    if (token) {
-      await this.revokeTokenFamily(token.familyId);
-    }
-  }
-
-  async revokeAllUserRefreshTokens(userId: string): Promise<void> {
-    await this.refreshTokensRepository.update(
-      { userId, isRevoked: false },
-      { isRevoked: true },
-    );
-  }
-
-  @Cron(CronExpression.EVERY_DAY_AT_3AM)
-  async purgeExpiredRefreshTokens(): Promise<void> {
-    const expiredResult = await this.refreshTokensRepository.delete({
-      expiresAt: LessThan(new Date()),
-    });
-
-    const revokedResult = await this.refreshTokensRepository.delete({
-      isRevoked: true,
-    });
-
-    const totalPurged =
-      (expiredResult.affected || 0) + (revokedResult.affected || 0);
-    if (totalPurged > 0) {
-      this.logger.log(`Purged ${totalPurged} expired/revoked refresh tokens`);
-    }
+    const result = await this.findOrCreateOidcUser(profile);
+    return this.sanitizeUser(result.user);
   }
 
   async getUserById(id: string): Promise<User | null> {
     return this.usersRepository.findOne({ where: { id } });
-  }
-
-  async generateResetToken(
-    email: string,
-  ): Promise<{ user: User; token: string } | null> {
-    const user = await this.usersRepository.findOne({
-      where: { email },
-    });
-
-    if (!user || !user.passwordHash) return null;
-
-    const rawResetToken = crypto.randomBytes(32).toString("hex");
-    const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-
-    // SECURITY: Store hashed token — matches pattern used for refresh tokens and trusted devices
-    user.resetToken = this.hashToken(rawResetToken);
-    user.resetTokenExpiry = resetTokenExpiry;
-    await this.usersRepository.save(user);
-
-    return { user, token: rawResetToken };
-  }
-
-  async resetPassword(token: string, newPassword: string): Promise<void> {
-    // Check for breached password
-    const isBreached = await this.passwordBreachService.isBreached(newPassword);
-    if (isBreached) {
-      throw new BadRequestException(
-        "This password has been found in a data breach. Please choose a different password.",
-      );
-    }
-
-    // SECURITY: Hash the incoming token to compare against stored hash
-    const hashedToken = this.hashToken(token);
-
-    const saltRounds = 12;
-    const passwordHash = await bcrypt.hash(newPassword, saltRounds);
-
-    // M11: Atomic UPDATE...WHERE to prevent TOCTOU race condition.
-    // Only one concurrent request can match the resetToken; the second will
-    // find affected === 0 because the first already cleared it.
-    const result = await this.usersRepository
-      .createQueryBuilder()
-      .update(User)
-      .set({
-        passwordHash,
-        resetToken: null,
-        resetTokenExpiry: null,
-      })
-      .where("resetToken = :hashedToken", { hashedToken })
-      .andWhere("resetTokenExpiry > :now", { now: new Date() })
-      .returning("id")
-      .execute();
-
-    if (!result.affected || result.affected === 0) {
-      throw new BadRequestException("Invalid or expired reset token");
-    }
-
-    // Revoke all refresh tokens to force re-login on all devices
-    const userId = result.raw?.[0]?.id;
-    if (userId) {
-      await this.revokeAllUserRefreshTokens(userId);
-    }
-  }
-
-  // Trusted device methods
-
-  private hashToken(token: string): string {
-    return crypto.createHash("sha256").update(token).digest("hex");
-  }
-
-  private parseDeviceName(userAgent: string): string {
-    if (!userAgent || userAgent === "Unknown Device") {
-      return "Unknown Device";
-    }
-    const parser = new UAParser(userAgent);
-    const browser = parser.getBrowser();
-    const os = parser.getOS();
-    const parts: string[] = [];
-    if (browser.name) parts.push(browser.name);
-    if (os.name) {
-      let osStr = os.name;
-      if (os.version) osStr += " " + os.version;
-      parts.push("on " + osStr);
-    }
-    return parts.length > 0 ? parts.join(" ") : "Unknown Device";
-  }
-
-  async createTrustedDevice(
-    userId: string,
-    userAgent: string,
-    ipAddress?: string,
-  ): Promise<string> {
-    const deviceToken = crypto.randomBytes(64).toString("hex");
-    const tokenHash = this.hashToken(deviceToken);
-    const deviceName = this.parseDeviceName(userAgent);
-    const expiresAt = new Date(Date.now() + this.TRUSTED_DEVICE_EXPIRY_MS);
-
-    const trustedDevice = this.trustedDevicesRepository.create({
-      userId,
-      tokenHash,
-      deviceName,
-      ipAddress: ipAddress || null,
-      lastUsedAt: new Date(),
-      expiresAt,
-    });
-
-    await this.trustedDevicesRepository.save(trustedDevice);
-    return deviceToken;
-  }
-
-  async validateTrustedDevice(
-    userId: string,
-    deviceToken: string,
-  ): Promise<boolean> {
-    const tokenHash = this.hashToken(deviceToken);
-
-    const device = await this.trustedDevicesRepository.findOne({
-      where: { userId, tokenHash },
-    });
-
-    if (!device) return false;
-
-    if (device.expiresAt < new Date()) {
-      await this.trustedDevicesRepository.remove(device);
-      return false;
-    }
-
-    device.lastUsedAt = new Date();
-    await this.trustedDevicesRepository.save(device);
-    return true;
-  }
-
-  async getTrustedDevices(userId: string): Promise<TrustedDevice[]> {
-    await this.trustedDevicesRepository.delete({
-      userId,
-      expiresAt: LessThan(new Date()),
-    });
-
-    return this.trustedDevicesRepository.find({
-      where: { userId },
-      order: { lastUsedAt: "DESC" },
-    });
-  }
-
-  async revokeTrustedDevice(userId: string, deviceId: string): Promise<void> {
-    const device = await this.trustedDevicesRepository.findOne({
-      where: { id: deviceId, userId },
-    });
-
-    if (!device) {
-      throw new NotFoundException("Device not found");
-    }
-
-    await this.trustedDevicesRepository.remove(device);
-  }
-
-  async revokeAllTrustedDevices(userId: string): Promise<number> {
-    const result = await this.trustedDevicesRepository.delete({ userId });
-    return result.affected || 0;
-  }
-
-  async findTrustedDeviceByToken(
-    userId: string,
-    deviceToken: string,
-  ): Promise<string | null> {
-    const tokenHash = this.hashToken(deviceToken);
-    const device = await this.trustedDevicesRepository.findOne({
-      where: { userId, tokenHash },
-    });
-    return device?.id || null;
-  }
-
-  // L5: Backup code methods
-
-  async generateBackupCodes(userId: string, code: string): Promise<string[]> {
-    const user = await this.usersRepository.findOne({
-      where: { id: userId },
-    });
-
-    if (!user) {
-      throw new NotFoundException("User not found");
-    }
-
-    if (!user.twoFactorSecret) {
-      throw new BadRequestException("2FA is not enabled");
-    }
-
-    const secret = decrypt(user.twoFactorSecret, this.jwtSecret);
-    const isValid = otplib.verifySync({ token: code, secret }).valid;
-
-    if (!isValid) {
-      throw new BadRequestException("Invalid verification code");
-    }
-
-    const codes: string[] = [];
-    for (let i = 0; i < this.BACKUP_CODE_COUNT; i++) {
-      const raw = crypto.randomBytes(4).toString("hex");
-      codes.push(`${raw.slice(0, 4)}-${raw.slice(4)}`); // XXXX-XXXX hex codes
-    }
-
-    // Store hashed codes as JSON array
-    const hashedCodes = await Promise.all(
-      codes.map((code) => bcrypt.hash(code, 10)),
-    );
-    user.backupCodes = JSON.stringify(hashedCodes);
-    await this.usersRepository.save(user);
-
-    return codes;
-  }
-
-  private async verifyBackupCode(user: User, code: string): Promise<boolean> {
-    if (!user.backupCodes) return false;
-
-    // Pre-check: find matching code index before acquiring lock
-    const hashedCodes: string[] = JSON.parse(user.backupCodes);
-    let matchIndex = -1;
-    for (let i = 0; i < hashedCodes.length; i++) {
-      const isMatch = await bcrypt.compare(code, hashedCodes[i]);
-      if (isMatch) {
-        matchIndex = i;
-        break;
-      }
-    }
-
-    if (matchIndex === -1) return false;
-
-    // Atomic removal: use QueryRunner with pessimistic lock to prevent
-    // concurrent backup code reuse (TOCTOU race condition)
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-    try {
-      const lockedUser = await queryRunner.manager.findOne(User, {
-        where: { id: user.id },
-        lock: { mode: "pessimistic_write" },
-      });
-
-      if (!lockedUser?.backupCodes) {
-        await queryRunner.rollbackTransaction();
-        return false;
-      }
-
-      const currentCodes: string[] = JSON.parse(lockedUser.backupCodes);
-
-      // Re-verify against the locked row to prevent replay
-      let verifiedIndex = -1;
-      for (let i = 0; i < currentCodes.length; i++) {
-        const isMatch = await bcrypt.compare(code, currentCodes[i]);
-        if (isMatch) {
-          verifiedIndex = i;
-          break;
-        }
-      }
-
-      if (verifiedIndex === -1) {
-        // Code already consumed by a concurrent request
-        await queryRunner.rollbackTransaction();
-        return false;
-      }
-
-      const updatedCodes = [
-        ...currentCodes.slice(0, verifiedIndex),
-        ...currentCodes.slice(verifiedIndex + 1),
-      ];
-
-      await queryRunner.manager
-        .createQueryBuilder()
-        .update(User)
-        .set({
-          backupCodes:
-            updatedCodes.length > 0 ? JSON.stringify(updatedCodes) : null,
-        })
-        .where("id = :id", { id: user.id })
-        .execute();
-
-      await queryRunner.commitTransaction();
-
-      // Keep in-memory entity consistent
-      user.backupCodes =
-        updatedCodes.length > 0 ? JSON.stringify(updatedCodes) : null;
-
-      return true;
-    } catch (error) {
-      await queryRunner.rollbackTransaction();
-      throw error;
-    } finally {
-      await queryRunner.release();
-    }
-  }
-
-  // M7: Per-email rate limiting for forgot-password
-
-  checkForgotPasswordEmailLimit(email: string): boolean {
-    const normalizedEmail = email.toLowerCase().trim();
-    const now = Date.now();
-    const record = this.forgotPasswordAttempts.get(normalizedEmail);
-
-    if (record) {
-      if (now - record.windowStart > this.FORGOT_PASSWORD_EMAIL_WINDOW_MS) {
-        // Window expired, reset
-        this.forgotPasswordAttempts.set(normalizedEmail, {
-          count: 1,
-          windowStart: now,
-        });
-        return true;
-      }
-      if (record.count >= this.FORGOT_PASSWORD_EMAIL_LIMIT) {
-        return false;
-      }
-      record.count += 1;
-      return true;
-    }
-
-    this.forgotPasswordAttempts.set(normalizedEmail, {
-      count: 1,
-      windowStart: now,
-    });
-    return true;
   }
 
   // M6: OIDC account linking with confirmation
@@ -1189,7 +438,7 @@ export class AuthService {
     oidcSubject: string,
   ): Promise<string> {
     const linkToken = crypto.randomBytes(32).toString("hex");
-    existingUser.oidcLinkToken = this.hashToken(linkToken);
+    existingUser.oidcLinkToken = hashToken(linkToken);
     existingUser.oidcLinkExpiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
     existingUser.oidcLinkPending = true;
     existingUser.pendingOidcSubject = oidcSubject;
@@ -1197,8 +446,42 @@ export class AuthService {
     return linkToken;
   }
 
+  private async sendOidcLinkEmail(
+    user: User,
+    linkToken: string,
+  ): Promise<void> {
+    if (!user.email) return;
+    try {
+      const frontendUrl =
+        this.configService.get<string>("PUBLIC_APP_URL") ||
+        "http://localhost:3000";
+      const confirmUrl = `${frontendUrl}/api/v1/auth/oidc/confirm-link?token=${linkToken}`;
+      const safeName = user.firstName || "there";
+      const html = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #1f2937;">Link Your SSO Account</h2>
+          <p style="color: #374151;">Hi ${safeName},</p>
+          <p style="color: #374151;">Someone attempted to sign in via SSO with an email that matches your existing Monize account. To link your SSO identity to this account, click the button below:</p>
+          <p style="text-align: center; margin: 24px 0;">
+            <a href="${confirmUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">Confirm Account Link</a>
+          </p>
+          <p style="color: #6b7280; font-size: 14px;">If you did not initiate this request, you can safely ignore this email. The link expires in 1 hour.</p>
+          <p style="color: #6b7280; font-size: 14px; margin-top: 24px;">-- Monize</p>
+        </div>`;
+      await this.emailService.sendMail(
+        user.email,
+        "Monize: Confirm SSO Account Link",
+        html,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Failed to send OIDC link confirmation email: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
   async confirmOidcLink(token: string): Promise<User> {
-    const hashedToken = this.hashToken(token);
+    const hashedToken = hashToken(token);
 
     const user = await this.usersRepository.findOne({
       where: { oidcLinkToken: hashedToken, oidcLinkPending: true },
@@ -1230,37 +513,6 @@ export class AuthService {
     return user;
   }
 
-  // M8: Migrate all legacy TOTP secrets to new format
-
-  async migrateLegacyTotpSecrets(): Promise<number> {
-    const users = await this.usersRepository
-      .createQueryBuilder("user")
-      .where("user.twoFactorSecret IS NOT NULL")
-      .getMany();
-
-    let migratedCount = 0;
-    for (const user of users) {
-      if (user.twoFactorSecret && isLegacyEncryption(user.twoFactorSecret)) {
-        const migrated = migrateFromLegacy(
-          user.twoFactorSecret,
-          this.jwtSecret,
-        );
-        if (migrated) {
-          user.twoFactorSecret = migrated;
-          await this.usersRepository.save(user);
-          migratedCount++;
-        }
-      }
-    }
-
-    if (migratedCount > 0) {
-      this.logger.log(
-        `Migrated ${migratedCount} legacy TOTP secrets to new format`,
-      );
-    }
-    return migratedCount;
-  }
-
   sanitizeUser(user: User) {
     const {
       passwordHash,
@@ -1278,5 +530,115 @@ export class AuthService {
       ...sanitized
     } = user;
     return { ...sanitized, hasPassword: !!passwordHash };
+  }
+
+  // --- Delegated methods (preserve public API for controller/strategies) ---
+
+  async generateTokenPair(user: User) {
+    return this.tokenService.generateTokenPair(user);
+  }
+
+  async refreshTokens(rawRefreshToken: string) {
+    return this.tokenService.refreshTokens(rawRefreshToken);
+  }
+
+  async revokeRefreshToken(rawRefreshToken: string) {
+    return this.tokenService.revokeRefreshToken(rawRefreshToken);
+  }
+
+  async revokeAllUserRefreshTokens(userId: string) {
+    return this.tokenService.revokeAllUserRefreshTokens(userId);
+  }
+
+  async verify2FA(
+    tempToken: string,
+    code: string,
+    rememberDevice = false,
+    userAgent?: string,
+    ipAddress?: string,
+  ) {
+    return this.twoFactorService.verify2FA(
+      tempToken,
+      code,
+      rememberDevice,
+      userAgent,
+      ipAddress,
+    );
+  }
+
+  async setup2FA(userId: string) {
+    return this.twoFactorService.setup2FA(userId);
+  }
+
+  async confirmSetup2FA(userId: string, code: string) {
+    return this.twoFactorService.confirmSetup2FA(userId, code);
+  }
+
+  async disable2FA(userId: string, code: string) {
+    return this.twoFactorService.disable2FA(userId, code);
+  }
+
+  async generateBackupCodes(userId: string, code: string) {
+    return this.twoFactorService.generateBackupCodes(userId, code);
+  }
+
+  async getTrustedDevices(userId: string) {
+    return this.twoFactorService.getTrustedDevices(userId);
+  }
+
+  async revokeTrustedDevice(userId: string, deviceId: string) {
+    return this.twoFactorService.revokeTrustedDevice(userId, deviceId);
+  }
+
+  async revokeAllTrustedDevices(userId: string) {
+    return this.twoFactorService.revokeAllTrustedDevices(userId);
+  }
+
+  async findTrustedDeviceByToken(userId: string, deviceToken: string) {
+    return this.twoFactorService.findTrustedDeviceByToken(userId, deviceToken);
+  }
+
+  async createTrustedDevice(
+    userId: string,
+    userAgent: string,
+    ipAddress?: string,
+  ) {
+    return this.twoFactorService.createTrustedDevice(
+      userId,
+      userAgent,
+      ipAddress,
+    );
+  }
+
+  async validateTrustedDevice(
+    userId: string,
+    deviceToken: string,
+    userAgent?: string,
+  ) {
+    return this.twoFactorService.validateTrustedDevice(
+      userId,
+      deviceToken,
+      userAgent,
+    );
+  }
+
+  async migrateLegacyTotpSecrets() {
+    return this.twoFactorService.migrateLegacyTotpSecrets();
+  }
+
+  async purgeExpiredRefreshTokens() {
+    return this.tokenService.purgeExpiredRefreshTokens();
+  }
+
+  async generateResetToken(email: string) {
+    return this.authEmailService.generateResetToken(email);
+  }
+
+  async resetPassword(token: string, newPassword: string) {
+    return this.authEmailService.resetPassword(token, newPassword);
+  }
+
+  checkForgotPasswordEmailLimit(email: string) {
+    return this.authEmailService.checkForgotPasswordEmailLimit(email);
   }
 }
