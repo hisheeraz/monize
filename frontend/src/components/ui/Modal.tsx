@@ -28,6 +28,9 @@ interface ModalProps {
   /** Called before the modal closes (escape, backdrop, back button).
    *  Return false to prevent closing. Not called for programmatic close (parent sets isOpen=false). */
   onBeforeClose?: () => boolean | void;
+  /** When true, uses overflow-visible instead of overflow-y-auto on the modal container.
+   *  Useful when the modal contains dropdowns that need to expand beyond modal bounds. */
+  allowOverflow?: boolean;
 }
 
 const maxWidthClasses = {
@@ -50,6 +53,7 @@ export function Modal({
   className = '',
   pushHistory = false,
   onBeforeClose,
+  allowOverflow = false,
 }: ModalProps) {
   // Track whether we have a history entry pushed
   const historyPushedRef = useRef(false);
@@ -238,7 +242,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         tabIndex={-1}
-        className={`bg-white dark:bg-gray-800 rounded-lg shadow-xl dark:shadow-gray-700/50 ${maxWidthClasses[maxWidth]} w-full max-h-[90vh] overflow-y-auto outline-none ${className}`}
+        className={`bg-white dark:bg-gray-800 rounded-lg shadow-xl dark:shadow-gray-700/50 ${maxWidthClasses[maxWidth]} w-full max-h-[90vh] ${allowOverflow ? 'overflow-visible' : 'overflow-y-auto'} outline-none ${className}`}
         onClick={(e) => e.stopPropagation()}
       >
         {children}
