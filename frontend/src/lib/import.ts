@@ -153,6 +153,7 @@ export interface CsvColumnMappingConfig {
   memo?: number;
   referenceNumber?: number;
   dateFormat: string;
+  reverseSign?: boolean;
   hasHeader: boolean;
   delimiter: string;
 }

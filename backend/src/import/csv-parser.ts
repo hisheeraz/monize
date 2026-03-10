@@ -30,6 +30,7 @@ export interface CsvColumnMappingConfig {
   memo?: number;
   referenceNumber?: number;
   dateFormat: string;
+  reverseSign?: boolean;
   hasHeader: boolean;
   delimiter: string;
 }
@@ -509,6 +510,9 @@ export function parseCsv(
     let amount = 0;
     if (config.amount !== undefined) {
       amount = parseCsvAmount(getField(row, config.amount)) ?? 0;
+      if (config.reverseSign) {
+        amount = -amount;
+      }
     } else if (
       config.debit !== undefined ||
       config.credit !== undefined

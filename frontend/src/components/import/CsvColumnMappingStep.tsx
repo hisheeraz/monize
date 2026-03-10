@@ -280,6 +280,17 @@ export function CsvColumnMappingStep({
                   ))}
                 </select>
               </div>
+              <div>
+                <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Sign</label>
+                <select
+                  value={columnMapping.reverseSign ? 'reverse' : 'normal'}
+                  onChange={(e) => onColumnMappingChange({ ...columnMapping, reverseSign: e.target.value === 'reverse' })}
+                  className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                >
+                  <option value="normal">As-is (positive = deposit)</option>
+                  <option value="reverse">Reverse (positive = withdrawal)</option>
+                </select>
+              </div>
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3">

@@ -192,6 +192,7 @@ export class ImportService {
       memo: dto.columnMapping.memo,
       referenceNumber: dto.columnMapping.referenceNumber,
       dateFormat: dto.columnMapping.dateFormat as DateFormat,
+      reverseSign: dto.columnMapping.reverseSign,
       hasHeader: dto.columnMapping.hasHeader,
       delimiter: dto.columnMapping.delimiter,
     };

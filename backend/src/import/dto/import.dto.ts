@@ -429,6 +429,13 @@ export class CsvColumnMappingConfigDto {
   @MaxLength(20)
   dateFormat: string;
 
+  @ApiPropertyOptional({
+    description: "Reverse the sign of single-amount values (for credit card CSVs where debits are positive)",
+  })
+  @IsOptional()
+  @IsBoolean()
+  reverseSign?: boolean;
+
   @ApiProperty({ description: "Whether the CSV has a header row" })
   @IsBoolean()
   hasHeader: boolean;
