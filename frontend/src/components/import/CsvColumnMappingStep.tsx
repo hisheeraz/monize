@@ -70,7 +70,8 @@ export function CsvColumnMappingStep({
   });
 
   const effectiveDateFormat = autoDetectedFormat || columnMapping.dateFormat;
-  const isCustom = !DATE_FORMAT_OPTIONS.some((o) => o.value === effectiveDateFormat) && effectiveDateFormat !== '';
+  const [customModeActive, setCustomModeActive] = useState(false);
+  const isCustom = customModeActive || (!DATE_FORMAT_OPTIONS.some((o) => o.value === effectiveDateFormat) && effectiveDateFormat !== '');
   const [customFormat, setCustomFormat] = useState(isCustom ? effectiveDateFormat : '');
   const autoDetectedRef = useRef(false);
 
@@ -171,10 +172,12 @@ export function CsvColumnMappingStep({
               onChange={(e) => {
                 const val = e.target.value;
                 if (val === CUSTOM_FORMAT_VALUE) {
+                  setCustomModeActive(true);
                   if (customFormat) {
                     onColumnMappingChange({ ...columnMapping, dateFormat: customFormat });
                   }
                 } else {
+                  setCustomModeActive(false);
                   setCustomFormat('');
                   onColumnMappingChange({ ...columnMapping, dateFormat: val });
                 }
