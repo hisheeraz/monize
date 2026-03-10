@@ -41,6 +41,7 @@ describe("ImportRegularProcessorService", () => {
       }
       return Promise.resolve(entity);
     }),
+    find: jest.fn().mockResolvedValue([]),
     findOne: jest.fn().mockResolvedValue(null),
     update: jest.fn().mockResolvedValue({ affected: 1 }),
     delete: jest.fn().mockResolvedValue({ affected: 1 }),
