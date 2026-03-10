@@ -130,6 +130,11 @@ export function BulkUpdateModal({
     if (enabled.payee) {
       if (selectedPayeeId) {
         updateData.payeeId = selectedPayeeId;
+        // Also send the payee name so the denormalized payeeName field is updated
+        const selectedPayee = payees.find(p => p.id === selectedPayeeId);
+        if (selectedPayee) {
+          updateData.payeeName = selectedPayee.name;
+        }
       } else if (payeeName) {
         updateData.payeeName = payeeName;
       } else {
@@ -160,7 +165,7 @@ export function BulkUpdateModal({
   };
 
   // Info notes about what gets skipped
-  const showTransferNote = enabled.payee || enabled.category;
+  const showTransferNote = enabled.payee;
   const showSplitNote = enabled.category;
 
   return (
@@ -238,7 +243,7 @@ export function BulkUpdateModal({
           <div className="mt-4 space-y-1">
             {showTransferNote && (
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                Transfer transactions will be skipped for payee/category changes.
+                Transfer transactions will have their linked counterpart updated as well.
               </p>
             )}
             {showSplitNote && (

@@ -93,6 +93,12 @@ export class AccountsService {
       return this.createMortgageAccount(userId, createAccountDto);
     }
 
+    // Strip credit card statement fields for non-credit-card accounts
+    if (accountData.accountType !== AccountType.CREDIT_CARD) {
+      delete accountData.statementDueDay;
+      delete accountData.statementSettlementDay;
+    }
+
     const account = this.accountsRepository.create({
       ...accountData,
       userId,
@@ -402,6 +408,18 @@ export class AccountsService {
       account.interestRate = updateAccountDto.interestRate;
     if (updateAccountDto.isFavourite !== undefined)
       account.isFavourite = updateAccountDto.isFavourite;
+    // Credit card statement fields (only for credit card accounts)
+    const effectiveType = updateAccountDto.accountType ?? account.accountType;
+    if (effectiveType === AccountType.CREDIT_CARD) {
+      if (updateAccountDto.statementDueDay !== undefined)
+        account.statementDueDay = updateAccountDto.statementDueDay;
+      if (updateAccountDto.statementSettlementDay !== undefined)
+        account.statementSettlementDay = updateAccountDto.statementSettlementDay;
+    } else {
+      // Clear statement fields if account type is changed away from credit card
+      account.statementDueDay = null;
+      account.statementSettlementDay = null;
+    }
     if (updateAccountDto.paymentAmount !== undefined)
       account.paymentAmount = updateAccountDto.paymentAmount;
     if (updateAccountDto.paymentFrequency !== undefined)

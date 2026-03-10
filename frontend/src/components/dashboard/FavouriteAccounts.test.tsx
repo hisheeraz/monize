@@ -84,6 +84,103 @@ describe("FavouriteAccounts", () => {
     expect(screen.queryByText("Closed")).not.toBeInTheDocument();
   });
 
+  it("shows credit card statement dates for favourite CC accounts", () => {
+    const accounts = [
+      {
+        id: "1",
+        name: "Visa Card",
+        currentBalance: -500,
+        currencyCode: "CAD",
+        isFavourite: true,
+        isClosed: false,
+        accountType: "CREDIT_CARD",
+        statementDueDay: 15,
+        statementSettlementDay: 25,
+      },
+    ] as any[];
+
+    render(<FavouriteAccounts accounts={accounts} isLoading={false} />);
+    expect(screen.getByText(/Due: 15th/)).toBeInTheDocument();
+    expect(screen.getByText(/Settlement: 25th/)).toBeInTheDocument();
+  });
+
+  it("shows ordinal suffixes correctly for CC dates", () => {
+    const accounts = [
+      {
+        id: "1",
+        name: "CC",
+        currentBalance: 0,
+        currencyCode: "CAD",
+        isFavourite: true,
+        isClosed: false,
+        accountType: "CREDIT_CARD",
+        statementDueDay: 1,
+        statementSettlementDay: 2,
+      },
+    ] as any[];
+
+    render(<FavouriteAccounts accounts={accounts} isLoading={false} />);
+    expect(screen.getByText(/Due: 1st/)).toBeInTheDocument();
+    expect(screen.getByText(/Settlement: 2nd/)).toBeInTheDocument();
+  });
+
+  it("does not show CC dates for non-credit-card accounts", () => {
+    const accounts = [
+      {
+        id: "1",
+        name: "Checking",
+        currentBalance: 1000,
+        currencyCode: "CAD",
+        isFavourite: true,
+        isClosed: false,
+        accountType: "CHEQUING",
+      },
+    ] as any[];
+
+    render(<FavouriteAccounts accounts={accounts} isLoading={false} />);
+    expect(screen.queryByText(/Due:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Settlement:/)).not.toBeInTheDocument();
+  });
+
+  it("shows help tooltip for settlement date in favourites", () => {
+    const accounts = [
+      {
+        id: "1",
+        name: "Visa",
+        currentBalance: -100,
+        currencyCode: "CAD",
+        isFavourite: true,
+        isClosed: false,
+        accountType: "CREDIT_CARD",
+        statementSettlementDay: 20,
+      },
+    ] as any[];
+
+    render(<FavouriteAccounts accounts={accounts} isLoading={false} />);
+    expect(
+      screen.getByTitle(/last day of the billing cycle/i)
+    ).toBeInTheDocument();
+  });
+
+  it("shows only due date when settlement day is not set", () => {
+    const accounts = [
+      {
+        id: "1",
+        name: "Amex",
+        currentBalance: -200,
+        currencyCode: "CAD",
+        isFavourite: true,
+        isClosed: false,
+        accountType: "CREDIT_CARD",
+        statementDueDay: 3,
+      },
+    ] as any[];
+
+    render(<FavouriteAccounts accounts={accounts} isLoading={false} />);
+    expect(screen.getByText(/Due: 3rd/)).toBeInTheDocument();
+    expect(screen.queryByText(/Settlement:/)).not.toBeInTheDocument();
+  });
+
   it("navigates to transactions page on account click", () => {
     const accounts = [
       {

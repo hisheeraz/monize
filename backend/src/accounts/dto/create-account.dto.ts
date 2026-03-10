@@ -132,6 +132,28 @@ export class CreateAccountDto {
   @IsBoolean()
   isFavourite?: boolean;
 
+  // Credit card statement fields
+  @ApiPropertyOptional({
+    example: 15,
+    description: "Day of the month when the credit card payment is due (1-31)",
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(31)
+  statementDueDay?: number;
+
+  @ApiPropertyOptional({
+    example: 25,
+    description:
+      "Day of the month that is the last day of the billing cycle (1-31). Transactions posted on or before this day appear on the current statement.",
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(31)
+  statementSettlementDay?: number;
+
   @ApiPropertyOptional({
     example: true,
     description:

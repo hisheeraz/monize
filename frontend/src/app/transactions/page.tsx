@@ -381,9 +381,13 @@ function TransactionsContent() {
 
     const parts = [`${result.updated} transaction${result.updated !== 1 ? 's' : ''} updated`];
     if (result.skipped > 0) parts.push(`${result.skipped} skipped`);
-    toast.success(parts.join(', '));
+    if (result.updated > 0) {
+      toast.success(parts.join(', '));
+    } else if (result.skipped > 0) {
+      toast.error(parts.join(', '));
+    }
     if (result.skippedReasons.length > 0) {
-      result.skippedReasons.forEach(reason => toast(reason, { icon: 'ℹ️' }));
+      result.skippedReasons.forEach(reason => toast(reason, { icon: 'ℹ️', duration: 6000 }));
     }
 
     setShowBulkUpdate(false);

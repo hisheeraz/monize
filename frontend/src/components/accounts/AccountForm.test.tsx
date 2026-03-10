@@ -113,6 +113,8 @@ function createExistingAccount(overrides: Partial<Account> = {}): Account {
     isClosed: false,
     closedDate: null,
     isFavourite: false,
+    statementDueDay: null,
+    statementSettlementDay: null,
     paymentAmount: null,
     paymentFrequency: null,
     paymentStartDate: null,
@@ -734,6 +736,68 @@ describe('AccountForm', () => {
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('19.99')).toBeInTheDocument();
+    });
+  });
+
+  it('shows credit card statement date fields when CREDIT_CARD type is selected', async () => {
+    render(
+      <AccountForm onSubmit={mockOnSubmit} onCancel={mockOnCancel} />
+    );
+
+    const typeSelect = screen.getByLabelText('Account Type') as HTMLSelectElement;
+    fireEvent.change(typeSelect, { target: { value: 'CREDIT_CARD' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Statement Dates (optional)')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Due Date (day of month)')).toBeInTheDocument();
+    expect(screen.getByText('Settlement Date (day of month)')).toBeInTheDocument();
+  });
+
+  it('does not show credit card statement date fields for non-CREDIT_CARD types', async () => {
+    render(
+      <AccountForm onSubmit={mockOnSubmit} onCancel={mockOnCancel} />
+    );
+
+    const typeSelect = screen.getByLabelText('Account Type') as HTMLSelectElement;
+    fireEvent.change(typeSelect, { target: { value: 'SAVINGS' } });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Statement Dates (optional)')).not.toBeInTheDocument();
+    });
+  });
+
+  it('populates credit card statement date fields when editing', async () => {
+    const ccAccount = createExistingAccount({
+      accountType: 'CREDIT_CARD',
+      statementDueDay: 15,
+      statementSettlementDay: 25,
+    });
+
+    render(
+      <AccountForm
+        account={ccAccount}
+        onSubmit={mockOnSubmit}
+        onCancel={mockOnCancel}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('15')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('25')).toBeInTheDocument();
+    });
+  });
+
+  it('shows settlement date help tooltip', async () => {
+    render(
+      <AccountForm onSubmit={mockOnSubmit} onCancel={mockOnCancel} />
+    );
+
+    const typeSelect = screen.getByLabelText('Account Type') as HTMLSelectElement;
+    fireEvent.change(typeSelect, { target: { value: 'CREDIT_CARD' } });
+
+    await waitFor(() => {
+      expect(screen.getByTitle(/settlement date.*closing date.*last day of the billing cycle/i)).toBeInTheDocument();
     });
   });
 

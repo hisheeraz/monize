@@ -109,6 +109,13 @@ export class Account {
   })
   interestRate: number | null;
 
+  // Credit card statement fields
+  @Column({ type: "integer", name: "statement_due_day", nullable: true })
+  statementDueDay: number | null;
+
+  @Column({ type: "integer", name: "statement_settlement_day", nullable: true })
+  statementSettlementDay: number | null;
+
   @Column({ name: "is_closed", default: false })
   isClosed: boolean;
 

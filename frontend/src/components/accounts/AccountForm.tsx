@@ -69,6 +69,9 @@ const accountSchema = z.object({
   institution: z.string().optional(),
   isFavourite: z.boolean().optional(),
   createInvestmentPair: z.boolean().optional(),
+  // Credit card statement fields
+  statementDueDay: optionalNumberWithRange(1, 31),
+  statementSettlementDay: optionalNumberWithRange(1, 31),
   // Loan-specific fields
   paymentAmount: optionalNumber,
   paymentFrequency: z.enum(paymentFrequencies).optional(),
@@ -150,6 +153,8 @@ export function AccountForm({ account, onSubmit, onCancel, onDirtyChange, submit
           accountNumber: account.accountNumber || undefined,
           institution: account.institution || undefined,
           isFavourite: account.isFavourite || false,
+          statementDueDay: account.statementDueDay || undefined,
+          statementSettlementDay: account.statementSettlementDay || undefined,
           paymentAmount: account.paymentAmount
             ? Math.round(Number(account.paymentAmount) * 100) / 100
             : undefined,
@@ -190,6 +195,9 @@ export function AccountForm({ account, onSubmit, onCancel, onDirtyChange, submit
 
   // Show investment pair checkbox only when creating a new INVESTMENT account
   const showInvestmentPairOption = !account && watchedAccountType === 'INVESTMENT';
+
+  // Show credit card fields for CREDIT_CARD account type
+  const isCreditCardAccount = watchedAccountType === 'CREDIT_CARD';
 
   // Show loan fields only for LOAN account type
   const isLoanAccount = watchedAccountType === 'LOAN';
@@ -488,6 +496,49 @@ export function AccountForm({ account, onSubmit, onCancel, onDirtyChange, submit
           />
 
           {(isLoanAccount || isMortgageAccount) && <div />} {/* Spacer for grid alignment */}
+        </div>
+      )}
+
+      {/* Credit card statement date fields */}
+      {isCreditCardAccount && (
+        <div className="space-y-4">
+          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">Statement Dates (optional)</h4>
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              label="Due Date (day of month)"
+              type="number"
+              min={1}
+              max={31}
+              placeholder="e.g. 15"
+              error={errors.statementDueDay?.message}
+              {...register('statementDueDay', { valueAsNumber: true })}
+            />
+
+            <div>
+              <div className="flex items-center gap-1 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Settlement Date (day of month)
+                </label>
+                <span
+                  className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 text-xs cursor-help"
+                  title="The settlement date (also called the closing date) is the last day of the billing cycle. Transactions posted on or before this day will appear on the current statement."
+                >
+                  ?
+                </span>
+              </div>
+              <input
+                type="number"
+                min={1}
+                max={31}
+                placeholder="e.g. 25"
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                {...register('statementSettlementDay', { valueAsNumber: true })}
+              />
+              {errors.statementSettlementDay?.message && (
+                <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.statementSettlementDay.message}</p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

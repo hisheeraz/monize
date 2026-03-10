@@ -126,12 +126,12 @@ describe('BulkUpdateModal', () => {
     render(<BulkUpdateModal {...defaultProps} />);
     // Initially no transfer note
     await waitFor(() => {
-      expect(screen.queryByText(/Transfer transactions will be skipped/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Transfer transactions will have their linked counterpart/)).not.toBeInTheDocument();
     });
     // Enable payee
     const checkboxes = screen.getAllByRole('checkbox');
     fireEvent.click(checkboxes[0]); // Payee checkbox
-    expect(screen.getByText(/Transfer transactions will be skipped/)).toBeInTheDocument();
+    expect(screen.getByText(/Transfer transactions will have their linked counterpart/)).toBeInTheDocument();
   });
 
   it('shows split note when category enabled', async () => {
@@ -144,6 +144,56 @@ describe('BulkUpdateModal', () => {
     const checkboxes = screen.getAllByRole('checkbox');
     fireEvent.click(checkboxes[1]); // Category checkbox
     expect(screen.getByText(/Split transactions will be skipped/)).toBeInTheDocument();
+  });
+
+  it('does not show transfer note when only category is enabled', async () => {
+    render(<BulkUpdateModal {...defaultProps} />);
+    await waitFor(() => {
+      expect(screen.getAllByRole('checkbox')).toHaveLength(4);
+    });
+    // Enable only category (checkbox index 1)
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[1]);
+    // Transfer note should not appear for category-only
+    expect(screen.queryByText(/Transfer transactions will have their linked counterpart/)).not.toBeInTheDocument();
+    // Split note should appear
+    expect(screen.getByText(/Split transactions will be skipped/)).toBeInTheDocument();
+  });
+
+  it('sends payeeName along with payeeId when selecting from dropdown', async () => {
+    const mockPayees = [
+      { id: 'payee-1', name: 'Wealthsimple VISA', userId: 'user-1', isActive: true, defaultCategoryId: null, createdAt: '', updatedAt: '' },
+    ];
+    mockGetAllPayees.mockResolvedValue(mockPayees);
+
+    const onSubmit = vi.fn().mockResolvedValue({ updated: 1, skipped: 0, skippedReasons: [] });
+    render(<BulkUpdateModal {...defaultProps} onSubmit={onSubmit} />);
+
+    // Wait for payees to load
+    await waitFor(() => {
+      expect(mockGetAllPayees).toHaveBeenCalled();
+    });
+
+    // Enable payee
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[0]);
+
+    // The Combobox mock fires onChange(value, label) -- simulate selecting a payee by ID
+    const combobox = screen.getByPlaceholderText('Select or type payee name...');
+    fireEvent.change(combobox, { target: { value: 'payee-1' } });
+
+    // Submit
+    const submitButton = screen.getByText(/Update 5 Transaction/);
+    fireEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payeeId: 'payee-1',
+          payeeName: 'Wealthsimple VISA',
+        }),
+      );
+    });
   });
 
   it('submits with enabled fields only', async () => {

@@ -110,6 +110,9 @@ CREATE TABLE accounts (
     current_balance NUMERIC(20, 4) DEFAULT 0,
     credit_limit NUMERIC(20, 4), -- for credit cards
     interest_rate NUMERIC(8, 4), -- for loans, mortgages, savings
+    -- Credit card statement fields
+    statement_due_day INTEGER CHECK (statement_due_day IS NULL OR (statement_due_day >= 1 AND statement_due_day <= 31)) CHECK (account_type = 'CREDIT_CARD' OR statement_due_day IS NULL), -- day of month payment is due (credit cards only)
+    statement_settlement_day INTEGER CHECK (statement_settlement_day IS NULL OR (statement_settlement_day >= 1 AND statement_settlement_day <= 31)) CHECK (account_type = 'CREDIT_CARD' OR statement_settlement_day IS NULL), -- last day of billing cycle (credit cards only)
     is_closed BOOLEAN DEFAULT false,
     closed_date DATE,
     is_favourite BOOLEAN DEFAULT false,
