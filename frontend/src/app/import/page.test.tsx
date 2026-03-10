@@ -383,7 +383,7 @@ describe('ImportPage', () => {
     it('renders the subtitle', async () => {
       render(<ImportPage />);
       await waitFor(() => {
-        expect(screen.getByText('Import transactions from QIF, OFX/QFX, or CSV files')).toBeInTheDocument();
+        expect(screen.getByText(/Import transactions from QIF, OFX\/QFX, or CSV files/)).toBeInTheDocument();
       });
     });
 
