@@ -14,12 +14,25 @@ COPY backend/ .
 COPY database/schema.sql ./schema.sql
 COPY database/migrations ./migrations
 
-# Build application
-RUN npm run build
-
 EXPOSE 3000
 
 CMD ["npm", "run", "start:dev"]
+
+# Builder stage (uses slim/glibc to avoid Alpine musl stalling under QEMU arm64 emulation)
+FROM node:24-slim AS builder
+
+WORKDIR /app
+
+COPY backend/package*.json ./
+RUN npm ci
+
+COPY backend/ .
+
+# Copy schema.sql and migrations (needed by production stage)
+COPY database/schema.sql ./schema.sql
+COPY database/migrations ./migrations
+
+RUN npm run build
 
 # Production deps stage (uses slim/glibc to avoid Alpine musl SIGILL under QEMU)
 FROM node:24-slim AS deps
@@ -55,16 +68,16 @@ ENV NODE_ENV=production
 COPY --from=deps /app/node_modules ./node_modules
 COPY backend/package*.json ./
 
-# Copy built application from development stage (strip source maps)
-COPY --from=development /app/dist ./dist
+# Copy built application from builder stage (strip source maps)
+COPY --from=builder /app/dist ./dist
 RUN find ./dist -name '*.js.map' -delete
 
 # Copy schema.sql and migrations for auto-initialization
-COPY --from=development /app/schema.sql ./schema.sql
-COPY --from=development /app/migrations ./migrations
+COPY --from=builder /app/schema.sql ./schema.sql
+COPY --from=builder /app/migrations ./migrations
 
 # Copy and prepare entrypoint script
-COPY --from=development /app/docker-entrypoint.sh ./docker-entrypoint.sh
+COPY --from=builder /app/docker-entrypoint.sh ./docker-entrypoint.sh
 
 # Create non-root user and set permissions
 RUN addgroup -g 1001 -S nodejs && \
