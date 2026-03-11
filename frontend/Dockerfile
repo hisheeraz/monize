@@ -1,5 +1,5 @@
 # Development stage
-FROM node:20-alpine AS development
+FROM node:24-alpine AS development
 
 WORKDIR /app
 
@@ -15,7 +15,7 @@ EXPOSE 3000
 CMD ["npm", "run", "dev"]
 
 # Builder stage (uses slim/glibc to avoid Alpine musl SIGSEGV during next build)
-FROM node:20-slim AS builder
+FROM node:24-slim AS builder
 
 WORKDIR /app
 
@@ -26,7 +26,7 @@ COPY . .
 RUN npm run build
 
 # Production stage (uses standalone output)
-FROM node:20-alpine AS production
+FROM node:24-alpine AS production
 ARG GIT_SHA
 ARG BUILD_DATE
 ARG VERSION
