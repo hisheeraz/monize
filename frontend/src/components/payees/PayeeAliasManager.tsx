@@ -95,6 +95,7 @@ export function PayeeAliasManager({ payeeId }: PayeeAliasManagerProps) {
                 {alias.alias}
               </span>
               <button
+                type="button"
                 onClick={() => handleRemove(alias)}
                 className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 text-sm"
                 title="Remove alias"
@@ -121,6 +122,7 @@ export function PayeeAliasManager({ payeeId }: PayeeAliasManagerProps) {
           />
         </div>
         <Button
+          type="button"
           variant="secondary"
           size="sm"
           onClick={handleAdd}
