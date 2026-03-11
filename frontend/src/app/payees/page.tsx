@@ -150,6 +150,8 @@ function PayeesContent() {
         comparison = (a.transactionCount ?? 0) - (b.transactionCount ?? 0);
       } else if (sortField === 'aliases') {
         comparison = (a.aliasCount ?? 0) - (b.aliasCount ?? 0);
+      } else if (sortField === 'lastUsed') {
+        comparison = (a.lastUsedDate || '').localeCompare(b.lastUsedDate || '');
       } else if (sortField === 'createdAt') {
         comparison = (a.createdAt || '').localeCompare(b.createdAt || '');
       }
@@ -168,7 +170,7 @@ function PayeesContent() {
       setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortField(field);
-      setSortDirection(field === 'count' || field === 'aliases' || field === 'createdAt' ? 'desc' : 'asc');
+      setSortDirection(field === 'count' || field === 'aliases' || field === 'lastUsed' || field === 'createdAt' ? 'desc' : 'asc');
     }
     setCurrentPage(1);
   }, [sortField]);
