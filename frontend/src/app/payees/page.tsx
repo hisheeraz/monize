@@ -77,7 +77,9 @@ function PayeesContent() {
     try {
       const cleanedData = {
         ...data,
-        defaultCategoryId: data.defaultCategoryId || undefined,
+        defaultCategoryId: data.defaultCategoryId === '' || data.defaultCategoryId === undefined
+          ? null
+          : data.defaultCategoryId,
         notes: data.notes || undefined,
       };
 
@@ -85,7 +87,7 @@ function PayeesContent() {
         const updated = await payeesApi.update(editingItem.id, cleanedData);
         toast.success('Payee updated successfully');
         close();
-        setPayees(prev => prev.map(p => p.id === updated.id ? updated : p));
+        setPayees(prev => prev.map(p => p.id === updated.id ? { ...p, ...updated } : p));
       } else {
         const created = await payeesApi.create(cleanedData);
         toast.success('Payee created successfully');

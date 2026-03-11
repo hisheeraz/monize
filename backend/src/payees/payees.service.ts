@@ -261,7 +261,7 @@ export class PayeesService {
     userId: string,
     id: string,
     updatePayeeDto: UpdatePayeeDto,
-  ): Promise<Payee> {
+  ): Promise<Payee & { aliasCount: number; transactionCount: number }> {
     const payee = await this.findOne(userId, id);
 
     // Check for name conflicts if name is being updated
@@ -290,7 +290,7 @@ export class PayeesService {
     if (updatePayeeDto.isActive !== undefined)
       payee.isActive = updatePayeeDto.isActive;
 
-    const saved = await this.payeesRepository.save(payee);
+    await this.payeesRepository.save(payee);
 
     // Cascade name change to existing transactions and scheduled transactions
     if (nameChanged) {
@@ -304,7 +304,15 @@ export class PayeesService {
       );
     }
 
-    return saved;
+    // Re-fetch with relations and computed counts so the frontend has complete data
+    const refreshed = await this.findOne(userId, id);
+    const aliasCount = await this.aliasRepository.count({
+      where: { payeeId: id },
+    });
+    const transactionCount = await this.transactionsRepository.count({
+      where: { payeeId: id, userId },
+    });
+    return { ...refreshed, aliasCount, transactionCount };
   }
 
   async remove(userId: string, id: string): Promise<void> {

@@ -16,7 +16,7 @@ export class CreatePayeeDto {
   })
   @IsOptional()
   @IsUUID()
-  defaultCategoryId?: string;
+  defaultCategoryId?: string | null;
 
   @ApiProperty({
     example: "Local coffee shop on Main Street",
