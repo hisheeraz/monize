@@ -411,7 +411,11 @@ describe("PayeesService", () => {
   describe("update", () => {
     it("should update payee properties", async () => {
       const existingPayee = { ...mockPayee };
-      const refreshedPayee = { ...mockPayee, name: "New Name", notes: "Updated notes" };
+      const refreshedPayee = {
+        ...mockPayee,
+        name: "New Name",
+        notes: "Updated notes",
+      };
       // First findOne: ownership check; second: name conflict check; third: re-fetch after save
       payeesRepository.findOne
         .mockResolvedValueOnce(existingPayee)
@@ -497,20 +501,31 @@ describe("PayeesService", () => {
         .mockResolvedValueOnce(existingPayee)
         .mockResolvedValueOnce(refreshedPayee);
 
-      const result = await service.update(userId, "payee-1", { defaultCategoryId: "cat-99" });
+      const result = await service.update(userId, "payee-1", {
+        defaultCategoryId: "cat-99",
+      });
 
       expect(result.defaultCategoryId).toBe("cat-99");
       expect(payeesRepository.save).toHaveBeenCalled();
     });
 
     it("should clear defaultCategoryId when set to null", async () => {
-      const existingPayee = { ...mockPayee, defaultCategory: { id: "cat-1", name: "Food" } };
-      const refreshedPayee = { ...mockPayee, defaultCategoryId: null, defaultCategory: null };
+      const existingPayee = {
+        ...mockPayee,
+        defaultCategory: { id: "cat-1", name: "Food" },
+      };
+      const refreshedPayee = {
+        ...mockPayee,
+        defaultCategoryId: null,
+        defaultCategory: null,
+      };
       payeesRepository.findOne
         .mockResolvedValueOnce(existingPayee)
         .mockResolvedValueOnce(refreshedPayee);
 
-      const result = await service.update(userId, "payee-1", { defaultCategoryId: null });
+      const result = await service.update(userId, "payee-1", {
+        defaultCategoryId: null,
+      });
 
       expect(result.defaultCategoryId).toBeNull();
       // Verify the relation object is also nulled so TypeORM save() doesn't
@@ -1396,7 +1411,9 @@ describe("PayeesService", () => {
         .mockResolvedValueOnce(existingPayee)
         .mockResolvedValueOnce(refreshedPayee);
 
-      const result = await service.update(userId, "payee-1", { isActive: false });
+      const result = await service.update(userId, "payee-1", {
+        isActive: false,
+      });
 
       expect(result.isActive).toBe(false);
       expect(payeesRepository.save).toHaveBeenCalled();
@@ -1408,7 +1425,9 @@ describe("PayeesService", () => {
         .mockResolvedValueOnce(existingPayee)
         .mockResolvedValueOnce(existingPayee);
 
-      const result = await service.update(userId, "payee-1", { notes: "Updated" });
+      const result = await service.update(userId, "payee-1", {
+        notes: "Updated",
+      });
 
       expect(result.isActive).toBe(true);
     });
