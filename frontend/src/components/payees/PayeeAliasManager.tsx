@@ -8,17 +8,10 @@ import { payeesApi } from '@/lib/payees';
 import toast from 'react-hot-toast';
 import { getErrorMessage } from '@/lib/errors';
 
-interface ConnectedProps {
-  payeeId: string;
-  onPendingAliasesChange?: never;
+interface PayeeAliasManagerProps {
+  payeeId?: string;
+  onPendingAliasesChange?: (aliases: string[]) => void;
 }
-
-interface LocalProps {
-  payeeId?: undefined;
-  onPendingAliasesChange: (aliases: string[]) => void;
-}
-
-type PayeeAliasManagerProps = ConnectedProps | LocalProps;
 
 export function PayeeAliasManager({ payeeId, onPendingAliasesChange }: PayeeAliasManagerProps) {
   const [aliases, setAliases] = useState<PayeeAlias[]>([]);
@@ -57,7 +50,7 @@ export function PayeeAliasManager({ payeeId, onPendingAliasesChange }: PayeeAlia
       }
       const updated = [...pendingAliases, trimmed].sort((a, b) => a.localeCompare(b));
       setPendingAliases(updated);
-      onPendingAliasesChange(updated);
+      onPendingAliasesChange?.(updated);
       setNewAlias('');
       return;
     }
@@ -81,7 +74,7 @@ export function PayeeAliasManager({ payeeId, onPendingAliasesChange }: PayeeAlia
   const handleRemoveLocal = (alias: string) => {
     const updated = pendingAliases.filter(a => a !== alias);
     setPendingAliases(updated);
-    onPendingAliasesChange!(updated);
+    onPendingAliasesChange?.(updated);
   };
 
   const handleRemove = async (alias: PayeeAlias) => {
