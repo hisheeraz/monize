@@ -1,5 +1,11 @@
 import { ApiProperty } from "@nestjs/swagger";
-import { IsString, IsOptional, MaxLength, IsUUID, ValidateIf } from "class-validator";
+import {
+  IsString,
+  IsOptional,
+  MaxLength,
+  IsUUID,
+  ValidateIf,
+} from "class-validator";
 import { SanitizeHtml } from "../../common/decorators/sanitize-html.decorator";
 
 export class CreatePayeeDto {

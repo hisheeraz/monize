@@ -1,5 +1,5 @@
 # Development stage
-FROM node:20-alpine AS development
+FROM node:24-alpine AS development
 
 WORKDIR /app
 
@@ -22,7 +22,7 @@ EXPOSE 3000
 CMD ["npm", "run", "start:dev"]
 
 # Production deps stage (uses slim/glibc to avoid Alpine musl SIGILL under QEMU)
-FROM node:20-slim AS deps
+FROM node:24-slim AS deps
 
 WORKDIR /app
 
@@ -30,7 +30,7 @@ COPY backend/package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 # Production stage
-FROM node:20-alpine AS production
+FROM node:24-alpine AS production
 ARG GIT_SHA
 ARG BUILD_DATE
 ARG VERSION
