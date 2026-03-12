@@ -177,7 +177,7 @@ export function SecurityPriceHistory({ security, onClose }: SecurityPriceHistory
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {prices.map((price) => (
-                <tr key={price.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                <tr key={price.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                   <td className="px-3 py-2 text-sm text-gray-900 dark:text-gray-100 whitespace-nowrap">
                     {formatDate(price.priceDate)}
                   </td>
@@ -202,7 +202,7 @@ export function SecurityPriceHistory({ security, onClose }: SecurityPriceHistory
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
-                    <div className="flex gap-3 justify-end">
+                    <div className="flex gap-2 justify-end">
                       <button
                         onClick={() => { setShowAddForm(false); setEditingPrice(price); }}
                         className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-xs"
