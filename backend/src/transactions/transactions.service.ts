@@ -1134,11 +1134,31 @@ export class TransactionsService {
     userId: string,
     createTransferDto: CreateTransferDto,
   ): Promise<TransferResult> {
-    return this.transferService.createTransfer(
+    const result = await this.transferService.createTransfer(
       userId,
       createTransferDto,
       this.findOne.bind(this),
     );
+
+    if (createTransferDto.tagIds && createTransferDto.tagIds.length > 0) {
+      await this.tagsService.setTransactionTags(
+        result.fromTransaction.id,
+        createTransferDto.tagIds,
+        userId,
+      );
+      await this.tagsService.setTransactionTags(
+        result.toTransaction.id,
+        createTransferDto.tagIds,
+        userId,
+      );
+
+      return {
+        fromTransaction: await this.findOne(userId, result.fromTransaction.id),
+        toTransaction: await this.findOne(userId, result.toTransaction.id),
+      };
+    }
+
+    return result;
   }
 
   async getLinkedTransaction(

@@ -36,6 +36,7 @@ describe("TransactionsService", () => {
   let accountsService: Record<string, jest.Mock>;
   let payeesService: Record<string, jest.Mock>;
   let netWorthService: Record<string, jest.Mock>;
+  let tagsService: Record<string, jest.Mock>;
   let mockQueryRunner: Record<string, any>;
 
   const mockAccount = {
@@ -195,7 +196,10 @@ describe("TransactionsService", () => {
         { provide: PayeesService, useValue: payeesService },
         {
           provide: TagsService,
-          useValue: { findByIds: jest.fn().mockResolvedValue([]) },
+          useValue: {
+            findByIds: jest.fn().mockResolvedValue([]),
+            setTransactionTags: jest.fn().mockResolvedValue(undefined),
+          },
         },
         { provide: NetWorthService, useValue: netWorthService },
         { provide: DataSource, useValue: mockDataSource },
@@ -209,6 +213,7 @@ describe("TransactionsService", () => {
 
     service = module.get<TransactionsService>(TransactionsService);
     splitService = module.get<TransactionSplitService>(TransactionSplitService);
+    tagsService = module.get(TagsService);
   });
 
   afterEach(() => {
@@ -856,6 +861,91 @@ describe("TransactionsService", () => {
           fromCurrencyCode: "USD",
         } as any),
       ).rejects.toThrow("Transfer amount must be positive");
+    });
+
+    it("sets tags on both transfer transactions when tagIds provided", async () => {
+      const toAccount = { ...mockAccount, id: "account-2", name: "Savings" };
+      accountsService.findOne
+        .mockResolvedValueOnce(mockAccount)
+        .mockResolvedValueOnce(toAccount);
+      transactionsRepository.findOne
+        .mockResolvedValueOnce({
+          id: "tx-from",
+          userId: "user-1",
+          splits: [],
+        })
+        .mockResolvedValueOnce({
+          id: "tx-to",
+          userId: "user-1",
+          splits: [],
+        })
+        .mockResolvedValueOnce({
+          id: "tx-from",
+          userId: "user-1",
+          splits: [],
+          tags: [{ id: "tag-1" }],
+        })
+        .mockResolvedValueOnce({
+          id: "tx-to",
+          userId: "user-1",
+          splits: [],
+          tags: [{ id: "tag-1" }],
+        });
+      transactionsRepository.save
+        .mockResolvedValueOnce({ id: "tx-from" })
+        .mockResolvedValueOnce({ id: "tx-to" });
+
+      await service.createTransfer("user-1", {
+        fromAccountId: "account-1",
+        toAccountId: "account-2",
+        transactionDate: "2026-01-15",
+        amount: 200,
+        fromCurrencyCode: "USD",
+        tagIds: ["tag-1"],
+      } as any);
+
+      expect(tagsService.setTransactionTags).toHaveBeenCalledWith(
+        "tx-from",
+        ["tag-1"],
+        "user-1",
+      );
+      expect(tagsService.setTransactionTags).toHaveBeenCalledWith(
+        "tx-to",
+        ["tag-1"],
+        "user-1",
+      );
+    });
+
+    it("does not set tags when tagIds is empty", async () => {
+      const toAccount = { ...mockAccount, id: "account-2", name: "Savings" };
+      accountsService.findOne
+        .mockResolvedValueOnce(mockAccount)
+        .mockResolvedValueOnce(toAccount);
+      transactionsRepository.findOne
+        .mockResolvedValueOnce({
+          id: "tx-from",
+          userId: "user-1",
+          splits: [],
+        })
+        .mockResolvedValueOnce({
+          id: "tx-to",
+          userId: "user-1",
+          splits: [],
+        });
+      transactionsRepository.save
+        .mockResolvedValueOnce({ id: "tx-from" })
+        .mockResolvedValueOnce({ id: "tx-to" });
+
+      await service.createTransfer("user-1", {
+        fromAccountId: "account-1",
+        toAccountId: "account-2",
+        transactionDate: "2026-01-15",
+        amount: 200,
+        fromCurrencyCode: "USD",
+        tagIds: [],
+      } as any);
+
+      expect(tagsService.setTransactionTags).not.toHaveBeenCalled();
     });
   });
 

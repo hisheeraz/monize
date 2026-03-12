@@ -5,6 +5,7 @@ import {
   IsDateString,
   IsUUID,
   IsEnum,
+  IsArray,
   MaxLength,
   Min,
   Max,
@@ -106,4 +107,12 @@ export class CreateTransferDto {
   @IsOptional()
   @IsEnum(TransactionStatus)
   status?: TransactionStatus;
+
+  @ApiPropertyOptional({
+    description: "Tag IDs to apply to both transfer transactions",
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUUID("4", { each: true })
+  tagIds?: string[];
 }

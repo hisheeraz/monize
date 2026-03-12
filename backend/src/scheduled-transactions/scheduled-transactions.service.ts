@@ -617,6 +617,10 @@ export class ScheduledTransactionsService {
         referenceNumber: postDto?.referenceNumber || undefined,
         payeeId: scheduled.payeeId || undefined,
         payeeName: scheduled.payeeName || undefined,
+        tagIds:
+          scheduled.tagIds && scheduled.tagIds.length > 0
+            ? scheduled.tagIds
+            : undefined,
       });
     } else {
       await this.transactionsService.create(userId, transactionPayload);
