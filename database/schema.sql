@@ -362,7 +362,7 @@ CREATE TABLE security_prices (
     low_price NUMERIC(20, 6),
     close_price NUMERIC(20, 6) NOT NULL,
     volume BIGINT,
-    source VARCHAR(50), -- API source
+    source VARCHAR(50), -- yahoo_finance, manual, or transaction action (buy, sell, reinvest, transfer_in, transfer_out)
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(security_id, price_date)
 );

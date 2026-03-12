@@ -261,6 +261,7 @@ describe("ImportService", () => {
 
     mockSecurityPriceService = {
       backfillHistoricalPrices: jest.fn().mockResolvedValue(undefined),
+      backfillTransactionPrices: jest.fn().mockResolvedValue({ processed: 0, created: 0, skipped: 0 }),
     };
 
     mockExchangeRateService = {
@@ -2434,6 +2435,65 @@ describe("ImportService", () => {
           mockSecurityPriceService.backfillHistoricalPrices,
         ).toHaveBeenCalled();
       });
+
+      it("backfills transaction-derived prices after investment import", async () => {
+        mockedParseQif.mockReturnValue({
+          accountType: "INVESTMENT",
+          accountName: "",
+          transactions: [
+            makeQifTransaction({
+              action: "Buy",
+              security: "AAPL",
+              price: 150,
+              quantity: 10,
+              amount: 1500,
+            }),
+          ],
+          categories: [],
+          transferAccounts: [],
+          securities: ["AAPL"],
+          detectedDateFormat: "MM/DD/YYYY",
+          sampleDates: [],
+          openingBalance: null,
+          openingBalanceDate: null,
+        });
+
+        await service.importQifFile(userId, makeInvestmentDto());
+
+        expect(
+          mockSecurityPriceService.backfillTransactionPrices,
+        ).toHaveBeenCalled();
+      });
+
+      it("does not fail when transaction price backfill fails", async () => {
+        mockedParseQif.mockReturnValue({
+          accountType: "INVESTMENT",
+          accountName: "",
+          transactions: [
+            makeQifTransaction({
+              action: "Buy",
+              security: "AAPL",
+              price: 150,
+              quantity: 10,
+              amount: 1500,
+            }),
+          ],
+          categories: [],
+          transferAccounts: [],
+          securities: ["AAPL"],
+          detectedDateFormat: "MM/DD/YYYY",
+          sampleDates: [],
+          openingBalance: null,
+          openingBalanceDate: null,
+        });
+
+        mockSecurityPriceService.backfillTransactionPrices.mockRejectedValue(
+          new Error("Transaction price backfill failed"),
+        );
+
+        const result = await service.importQifFile(userId, makeInvestmentDto());
+        expect(result.imported).toBeGreaterThanOrEqual(0);
+      });
     });
 
     describe("post-import operations", () => {
@@ -2459,6 +2519,14 @@ describe("ImportService", () => {
 
         expect(
           mockSecurityPriceService.backfillHistoricalPrices,
+        ).not.toHaveBeenCalled();
+      });
+
+      it("does not backfill transaction-derived prices for non-investment imports", async () => {
+        await service.importQifFile(userId, makeBaseDto());
+
+        expect(
+          mockSecurityPriceService.backfillTransactionPrices,
         ).not.toHaveBeenCalled();
       });
 

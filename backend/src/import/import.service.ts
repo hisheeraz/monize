@@ -717,6 +717,16 @@ export class ImportService {
           `Post-import historical price backfill failed: ${err.message}`,
         );
       }
+
+      try {
+        this.logger.log("Post-import: backfilling transaction-derived prices");
+        await this.securityPriceService.backfillTransactionPrices();
+        this.logger.log("Post-import: transaction price backfill complete");
+      } catch (err) {
+        this.logger.warn(
+          `Post-import transaction price backfill failed: ${err.message}`,
+        );
+      }
     }
 
     try {
