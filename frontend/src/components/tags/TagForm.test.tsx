@@ -106,7 +106,7 @@ describe('TagForm', () => {
   it('calls onSubmit with form data on valid submission', async () => {
     render(<TagForm onSubmit={onSubmit} onCancel={onCancel} />);
 
-    const nameInput = screen.getByRole('textbox');
+    const nameInput = screen.getByLabelText('Tag Name');
     fireEvent.change(nameInput, { target: { value: 'My Tag' } });
     fireEvent.click(screen.getByText('Create Tag'));
 
@@ -150,7 +150,7 @@ describe('TagForm', () => {
   it('renders empty name field in create mode', () => {
     render(<TagForm onSubmit={onSubmit} onCancel={onCancel} />);
 
-    const nameInput = screen.getByRole('textbox');
+    const nameInput = screen.getByLabelText('Tag Name');
     expect(nameInput).toHaveValue('');
   });
 
