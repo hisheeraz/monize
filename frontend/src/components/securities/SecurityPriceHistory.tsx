@@ -177,7 +177,7 @@ export function SecurityPriceHistory({ security, onClose }: SecurityPriceHistory
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {prices.map((price) => (
-                <tr key={price.id} className="hover:bg-gray-50 dark:hover:bg-gray-750">
+                <tr key={price.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                   <td className="px-3 py-2 text-sm text-gray-900 dark:text-gray-100 whitespace-nowrap">
                     {formatDate(price.priceDate)}
                   </td>
