@@ -1,6 +1,7 @@
 'use client';
 
 import { ReactNode, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 
 // Tracks programmatic history.back() calls from modal cleanup.
 // When a nested modal closes programmatically, it pops its history entry which fires popstate.
@@ -232,7 +233,7 @@ export function Modal({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50"
       onClick={() => attemptClose('backdrop')}
@@ -247,6 +248,7 @@ export function Modal({
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
