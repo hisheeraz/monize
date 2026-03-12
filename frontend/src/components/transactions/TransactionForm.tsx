@@ -576,8 +576,8 @@ export function TransactionForm({ transaction, defaultAccountId, onSuccess, onCa
   const handleTagCreate = async (data: { name: string; color?: string; icon?: string }) => {
     const cleanedData = {
       ...data,
-      color: data.color || null,
-      icon: data.icon || null,
+      color: data.color || undefined,
+      icon: data.icon || undefined,
     };
     const newTag = await tagsApi.create(cleanedData);
     setTags(prev => [...prev, newTag]);
