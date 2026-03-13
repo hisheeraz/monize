@@ -54,34 +54,9 @@ export class ScheduledTransactionsService {
 
     try {
       const today = todayYMD();
-      this.logger.log(`Auto-post check date: ${today}`);
 
-      // Log all autoPost-enabled transactions for diagnostics
-      const allAutoPost =
-        await this.scheduledTransactionsRepository.find({
-          where: { autoPost: true },
-          select: [
-            "id",
-            "name",
-            "isActive",
-            "nextDueDate",
-            "isTransfer",
-            "frequency",
-          ],
-        });
-      if (allAutoPost.length > 0) {
-        for (const st of allAutoPost) {
-          this.logger.log(
-            `Auto-post candidate: "${st.name}" (ID: ${st.id}) ` +
-              `isActive=${st.isActive} nextDueDate=${st.nextDueDate} ` +
-              `isTransfer=${st.isTransfer} frequency=${st.frequency}`,
-          );
-        }
-      } else {
-        this.logger.log("No scheduled transactions have autoPost=true");
-      }
-
-      const dueTransactions = await this.scheduledTransactionsRepository.find({
+      // Find transactions due by their base nextDueDate
+      const dueByDate = await this.scheduledTransactionsRepository.find({
         where: {
           isActive: true,
           autoPost: true,
@@ -98,6 +73,43 @@ export class ScheduledTransactionsService {
         ],
         order: { nextDueDate: "ASC" },
       });
+
+      // Find transactions with overrides that moved the date earlier
+      const overrideDueIds = await this.overridesRepository
+        .createQueryBuilder("o")
+        .innerJoin("o.scheduledTransaction", "st")
+        .where("o.overrideDate <= :today", { today })
+        .andWhere("o.originalDate = st.nextDueDate")
+        .andWhere("st.isActive = :active", { active: true })
+        .andWhere("st.autoPost = :autoPost", { autoPost: true })
+        .select("st.id", "id")
+        .distinct(true)
+        .getRawMany();
+
+      // Merge and deduplicate
+      const dueByDateIds = new Set(dueByDate.map((t) => t.id));
+      const overrideOnlyIds = overrideDueIds
+        .map((r) => r.id as string)
+        .filter((id) => !dueByDateIds.has(id));
+
+      let overrideDueTransactions: ScheduledTransaction[] = [];
+      if (overrideOnlyIds.length > 0) {
+        overrideDueTransactions =
+          await this.scheduledTransactionsRepository.find({
+            where: overrideOnlyIds.map((id) => ({ id })),
+            relations: [
+              "account",
+              "payee",
+              "category",
+              "transferAccount",
+              "splits",
+              "splits.category",
+              "splits.transferAccount",
+            ],
+          });
+      }
+
+      const dueTransactions = [...dueByDate, ...overrideDueTransactions];
 
       if (dueTransactions.length === 0) {
         this.logger.log("No auto-post transactions due");
@@ -346,7 +358,7 @@ export class ScheduledTransactionsService {
   async findDue(userId: string): Promise<ScheduledTransaction[]> {
     const today = todayYMD();
 
-    return this.scheduledTransactionsRepository.find({
+    const dueByDate = await this.scheduledTransactionsRepository.find({
       where: {
         userId,
         isActive: true,
@@ -363,6 +375,43 @@ export class ScheduledTransactionsService {
       ],
       order: { nextDueDate: "ASC" },
     });
+
+    // Also find transactions with overrides that moved the date earlier
+    const overrideDueIds = await this.overridesRepository
+      .createQueryBuilder("o")
+      .innerJoin("o.scheduledTransaction", "st")
+      .where("o.overrideDate <= :today", { today })
+      .andWhere("o.originalDate = st.nextDueDate")
+      .andWhere("st.userId = :userId", { userId })
+      .andWhere("st.isActive = :active", { active: true })
+      .select("st.id", "id")
+      .distinct(true)
+      .getRawMany();
+
+    const dueByDateIds = new Set(dueByDate.map((t) => t.id));
+    const overrideOnlyIds = overrideDueIds
+      .map((r) => r.id as string)
+      .filter((id) => !dueByDateIds.has(id));
+
+    if (overrideOnlyIds.length === 0) {
+      return dueByDate;
+    }
+
+    const overrideDueTransactions =
+      await this.scheduledTransactionsRepository.find({
+        where: overrideOnlyIds.map((id) => ({ id })),
+        relations: [
+          "account",
+          "payee",
+          "category",
+          "transferAccount",
+          "splits",
+          "splits.category",
+          "splits.transferAccount",
+        ],
+      });
+
+    return [...dueByDate, ...overrideDueTransactions];
   }
 
   async findUpcoming(
@@ -545,13 +594,16 @@ export class ScheduledTransactionsService {
         ? formatDateYMD(scheduled.nextDueDate)
         : String(scheduled.nextDueDate).split("T")[0];
 
-    const postDate = postDto?.transactionDate || nextDueDateStr;
-
     const storedOverride = await this.overridesRepository
       .createQueryBuilder("override")
       .where("override.scheduledTransactionId = :id", { id })
       .andWhere("override.originalDate = :nextDueDateStr", { nextDueDateStr })
       .getOne();
+
+    const postDate =
+      postDto?.transactionDate ||
+      storedOverride?.overrideDate ||
+      nextDueDateStr;
 
     const hasInlineAmount =
       postDto?.amount !== undefined && postDto?.amount !== null;
