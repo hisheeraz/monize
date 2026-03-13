@@ -18,6 +18,7 @@ describe('BulkSelectionBanner', () => {
     onSelectAllMatching: vi.fn(),
     onClearSelection: vi.fn(),
     onBulkUpdate: vi.fn(),
+    onBulkDelete: vi.fn(),
   };
 
   it('returns null when selectionCount is 0', () => {

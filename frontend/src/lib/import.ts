@@ -137,6 +137,58 @@ export interface CsvColumnMappingConfig {
   reverseSign?: boolean;
   hasHeader: boolean;
   delimiter: string;
+  amountTypeColumn?: number;
+  incomeValues?: string[];
+  expenseValues?: string[];
+  transferOutValues?: string[];
+  transferInValues?: string[];
+  transferAccountColumn?: number;
+}
+
+/**
+ * Auto-detect column mappings from CSV header names.
+ * Returns a partial CsvColumnMappingConfig with matched columns.
+ */
+export function autoMatchCsvColumns(headers: string[]): Partial<CsvColumnMappingConfig> {
+  const normalized = headers.map((h) => h.trim().toLowerCase());
+  const result: Partial<CsvColumnMappingConfig> = {};
+
+  const patterns: Record<string, string[]> = {
+    date: ['date', 'transaction date', 'trans date', 'posting date', 'trade date', 'settlement date', 'value date'],
+    amount: ['amount', 'sum', 'total', 'value', 'transaction amount'],
+    debit: ['debit', 'withdrawal', 'debit amount', 'withdrawals'],
+    credit: ['credit', 'deposit', 'credit amount', 'deposits'],
+    payee: ['payee', 'description', 'merchant', 'name', 'vendor', 'beneficiary', 'transaction description'],
+    category: ['category', 'type', 'class', 'transaction type'],
+    subcategory: ['subcategory', 'sub-category', 'sub category'],
+    memo: ['memo', 'note', 'notes', 'comment', 'comments', 'remarks', 'details', 'additional info'],
+    referenceNumber: ['reference', 'ref', 'check', 'check number', 'check no', 'reference number', 'ref no', 'transaction id', 'confirmation', 'receipt'],
+  };
+
+  const used = new Set<number>();
+
+  for (const [field, keywords] of Object.entries(patterns)) {
+    // Try exact match first, then substring match
+    let matchIndex = normalized.findIndex((h, i) => !used.has(i) && keywords.includes(h));
+    if (matchIndex === -1) {
+      matchIndex = normalized.findIndex((h, i) => !used.has(i) && keywords.some((k) => h.includes(k)));
+    }
+    if (matchIndex !== -1) {
+      used.add(matchIndex);
+      (result as Record<string, number>)[field] = matchIndex;
+    }
+  }
+
+  // If amount matched, prefer it over debit/credit
+  if (result.amount !== undefined) {
+    delete result.debit;
+    delete result.credit;
+  } else if (result.debit !== undefined && result.credit !== undefined) {
+    // Both debit and credit matched without amount -- keep split mode
+    delete result.amount;
+  }
+
+  return result;
 }
 
 export interface CsvTransferRule {

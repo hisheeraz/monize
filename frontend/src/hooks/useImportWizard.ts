@@ -13,6 +13,7 @@ import {
   CsvColumnMappingConfig,
   CsvTransferRule,
   SavedColumnMapping,
+  autoMatchCsvColumns,
 } from '@/lib/import';
 import { accountsApi } from '@/lib/accounts';
 import { categoriesApi } from '@/lib/categories';
@@ -352,7 +353,8 @@ export function useImportWizard() {
           });
         }
         setImportFiles(fileDataArray);
-        setCsvColumnMapping({ ...DEFAULT_CSV_COLUMN_MAPPING });
+        const autoMatched = autoMatchCsvColumns(headersResponse.headers);
+        setCsvColumnMapping({ ...DEFAULT_CSV_COLUMN_MAPPING, ...autoMatched });
         setCsvTransferRules([]);
         setStep('csvColumnMapping');
 
