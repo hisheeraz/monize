@@ -11,6 +11,7 @@ import { MapSecuritiesStep } from '@/components/import/MapSecuritiesStep';
 import { MapAccountsStep } from '@/components/import/MapAccountsStep';
 import { ReviewStep } from '@/components/import/ReviewStep';
 import { CompleteStep } from '@/components/import/CompleteStep';
+import { MultiAccountReviewStep } from '@/components/import/MultiAccountReviewStep';
 import { useImportWizard } from '@/hooks/useImportWizard';
 import { formatCategoryPath } from './import-utils';
 
@@ -157,6 +158,21 @@ function ImportContent() {
           />
         );
 
+      case 'multiAccountReview':
+        return wizard.multiAccountData ? (
+          <MultiAccountReviewStep
+            multiAccountData={wizard.multiAccountData}
+            currencyCode={wizard.multiAccountCurrency}
+            onCurrencyChange={wizard.setMultiAccountCurrency}
+            currencyOptions={wizard.currencyOptions}
+            dateFormat={wizard.dateFormat}
+            onDateFormatChange={(format) => wizard.setDateFormat(format)}
+            isLoading={wizard.isLoading}
+            onImport={wizard.handleMultiAccountImport}
+            setStep={wizard.setStep}
+          />
+        ) : null;
+
       case 'complete':
         return (
           <CompleteStep
@@ -185,7 +201,7 @@ function ImportContent() {
         <div className="mb-8">
           <div className="flex items-center justify-center space-x-4">
             {(() => {
-              const stepOrder = ['upload', 'csvColumnMapping', 'selectAccount', 'mapCategories', 'mapSecurities', 'mapAccounts', 'review', 'complete'];
+              const stepOrder = ['upload', 'csvColumnMapping', 'selectAccount', 'mapCategories', 'mapSecurities', 'mapAccounts', 'review', 'multiAccountReview', 'complete'];
               const currentIndex = stepOrder.indexOf(wizard.step);
 
               // Filter to only visible steps
@@ -194,6 +210,8 @@ function ImportContent() {
                 if (s === 'mapCategories' && wizard.categoryMappings.length === 0) return false;
                 if (s === 'mapSecurities' && wizard.securityMappings.length === 0) return false;
                 if (s === 'mapAccounts' && !wizard.shouldShowMapAccounts) return false;
+                if (s === 'multiAccountReview' && !wizard.multiAccountData) return false;
+                if (wizard.multiAccountData && ['selectAccount', 'mapCategories', 'mapSecurities', 'mapAccounts', 'review'].includes(s)) return false;
                 return true;
               });
 

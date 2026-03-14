@@ -7,6 +7,8 @@ import {
 import { TransactionSplit } from "../transactions/entities/transaction-split.entity";
 import { Payee } from "../payees/entities/payee.entity";
 import { PayeeAlias } from "../payees/entities/payee-alias.entity";
+import { TransactionTag } from "../tags/entities/transaction-tag.entity";
+import { TransactionSplitTag } from "../tags/entities/transaction-split-tag.entity";
 import { ImportContext, updateAccountBalance } from "./import-context";
 
 @Injectable()
@@ -74,6 +76,9 @@ export class ImportRegularProcessorService {
     });
 
     const savedTx = await ctx.queryRunner.manager.save(transaction);
+
+    // Assign tags to the transaction
+    await this.assignTransactionTags(ctx, savedTx.id, qifTx.tagNames);
 
     // Handle splits
     if (isSplit) {
@@ -325,6 +330,16 @@ export class ImportRegularProcessorService {
     if (!isSplit) {
       if (qifTx.isTransfer && qifTx.transferAccount) {
         transferAccountId = ctx.accountMap.get(qifTx.transferAccount) || null;
+        // Case-insensitive fallback
+        if (!transferAccountId) {
+          const lowerName = qifTx.transferAccount.toLowerCase();
+          for (const [name, id] of ctx.accountMap) {
+            if (name.toLowerCase() === lowerName) {
+              transferAccountId = id;
+              break;
+            }
+          }
+        }
       } else if (isLoanPaymentTx && qifTx.category) {
         transferAccountId = ctx.loanCategoryMap.get(qifTx.category) || null;
       }
@@ -348,6 +363,16 @@ export class ImportRegularProcessorService {
       if (split.isTransfer && split.transferAccount) {
         splitTransferAccountId =
           ctx.accountMap.get(split.transferAccount) || null;
+        // If transfer account not found, try case-insensitive match
+        if (!splitTransferAccountId) {
+          const lowerName = split.transferAccount.toLowerCase();
+          for (const [name, id] of ctx.accountMap) {
+            if (name.toLowerCase() === lowerName) {
+              splitTransferAccountId = id;
+              break;
+            }
+          }
+        }
       } else if (split.category) {
         if (ctx.loanCategoryMap.has(split.category)) {
           splitTransferAccountId =
@@ -370,6 +395,9 @@ export class ImportRegularProcessorService {
       );
 
       const savedSplit = await ctx.queryRunner.manager.save(transactionSplit);
+
+      // Assign tags to the split
+      await this.assignSplitTags(ctx, savedSplit.id, split.tagNames);
 
       if (splitTransferAccountId) {
         await this.processSplitTransfer(
@@ -535,6 +563,44 @@ export class ImportRegularProcessorService {
         await ctx.queryRunner.manager.update(Transaction, existingLinkedTx.id, {
           linkedTransactionId: null,
         });
+      }
+    }
+  }
+
+  private async assignTransactionTags(
+    ctx: ImportContext,
+    transactionId: string,
+    tagNames: string[],
+  ): Promise<void> {
+    if (!tagNames || tagNames.length === 0) return;
+
+    for (const name of tagNames) {
+      const tagId = ctx.tagMap.get(name.toLowerCase());
+      if (tagId) {
+        const txTag = ctx.queryRunner.manager.create(TransactionTag, {
+          transactionId,
+          tagId,
+        });
+        await ctx.queryRunner.manager.save(txTag);
+      }
+    }
+  }
+
+  private async assignSplitTags(
+    ctx: ImportContext,
+    splitId: string,
+    tagNames: string[],
+  ): Promise<void> {
+    if (!tagNames || tagNames.length === 0) return;
+
+    for (const name of tagNames) {
+      const tagId = ctx.tagMap.get(name.toLowerCase());
+      if (tagId) {
+        const splitTag = ctx.queryRunner.manager.create(TransactionSplitTag, {
+          transactionSplitId: splitId,
+          tagId,
+        });
+        await ctx.queryRunner.manager.save(splitTag);
       }
     }
   }

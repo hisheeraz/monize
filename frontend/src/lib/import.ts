@@ -249,6 +249,34 @@ export interface ImportResult {
   };
 }
 
+export interface ParsedQifMultiAccountResponse {
+  isMultiAccount: boolean;
+  categoryDefs: Array<{
+    name: string;
+    description: string;
+    isIncome: boolean;
+  }>;
+  tagDefs: Array<{
+    name: string;
+    description: string;
+  }>;
+  accounts: Array<{
+    accountName: string;
+    accountType: string;
+    transactionCount: number;
+    dateRange: { start: string; end: string };
+  }>;
+  totalTransactionCount: number;
+  detectedDateFormat: DateFormat;
+  sampleDates: string[];
+}
+
+export interface ImportQifMultiAccountRequest {
+  content: string;
+  currencyCode: string;
+  dateFormat?: DateFormat;
+}
+
 export const importApi = {
   parseQif: async (content: string): Promise<ParsedQifResponse> => {
     // Longer timeout for parsing large files (1 minute)
@@ -259,6 +287,17 @@ export const importApi = {
   importQif: async (data: ImportQifRequest): Promise<ImportResult> => {
     // Longer timeout for large imports (5 minutes)
     const response = await apiClient.post('/import/qif', data, { timeout: 300000 });
+    return response.data;
+  },
+
+  // Multi-account QIF
+  parseQifMultiAccount: async (content: string): Promise<ParsedQifMultiAccountResponse> => {
+    const response = await apiClient.post('/import/qif/multi-account/parse', { content }, { timeout: 60000 });
+    return response.data;
+  },
+
+  importQifMultiAccount: async (data: ImportQifMultiAccountRequest): Promise<ImportResult> => {
+    const response = await apiClient.post('/import/qif/multi-account', data, { timeout: 300000 });
     return response.data;
   },
 

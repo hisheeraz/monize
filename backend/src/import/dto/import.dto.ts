@@ -329,6 +329,75 @@ export class ImportResultDto {
   };
 }
 
+// --- Multi-account QIF DTOs ---
+
+export class ImportQifMultiAccountDto {
+  @ApiProperty({ description: "QIF file content as string" })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(10_000_000)
+  content: string;
+
+  @ApiProperty({
+    description: "Currency code for new accounts (e.g., USD, CAD)",
+  })
+  @IsString()
+  @MaxLength(3)
+  currencyCode: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Date format to use for parsing (MM/DD/YYYY, DD/MM/YYYY, YYYY-MM-DD, YYYY-DD-MM)",
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[YDMW/\-.]+$/, {
+    message:
+      "dateFormat must contain only date pattern characters (Y, M, D) and separators (/, -, .)",
+  })
+  @MaxLength(20)
+  dateFormat?: string;
+}
+
+export class ParsedQifMultiAccountResponseDto {
+  @ApiProperty({ description: "Whether this is a multi-account QIF file" })
+  isMultiAccount: boolean;
+
+  @ApiProperty({
+    description: "Category definitions from !Type:Cat sections",
+  })
+  categoryDefs: Array<{
+    name: string;
+    description: string;
+    isIncome: boolean;
+  }>;
+
+  @ApiProperty({
+    description: "Tag definitions from !Type:Tag sections",
+  })
+  tagDefs: Array<{
+    name: string;
+    description: string;
+  }>;
+
+  @ApiProperty({ description: "Account blocks found in the file" })
+  accounts: Array<{
+    accountName: string;
+    accountType: string;
+    transactionCount: number;
+    dateRange: { start: string; end: string };
+  }>;
+
+  @ApiProperty()
+  totalTransactionCount: number;
+
+  @ApiProperty({ description: "Detected date format" })
+  detectedDateFormat: string;
+
+  @ApiProperty({ type: [String], description: "Sample dates from the file" })
+  sampleDates: string[];
+}
+
 // --- OFX DTOs ---
 
 export class ParseOfxDto {

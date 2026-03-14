@@ -13,6 +13,7 @@ import {
   CsvColumnMappingConfig,
   CsvTransferRule,
   SavedColumnMapping,
+  ParsedQifMultiAccountResponse,
   autoMatchCsvColumns,
 } from '@/lib/import';
 import { accountsApi } from '@/lib/accounts';
@@ -98,6 +99,11 @@ export function useImportWizard() {
   const [newAccountCurrency, setNewAccountCurrency] = useState(defaultCurrency);
   const [isCreatingAccount, setIsCreatingAccount] = useState(false);
   const [creatingForFileIndex, setCreatingForFileIndex] = useState(-1);
+
+  // Multi-account QIF state
+  const [multiAccountData, setMultiAccountData] = useState<ParsedQifMultiAccountResponse | null>(null);
+  const [multiAccountContent, setMultiAccountContent] = useState<string>('');
+  const [multiAccountCurrency, setMultiAccountCurrency] = useState(defaultCurrency);
 
   // CSV-specific state
   const [fileType, setFileType] = useState<ImportFileType>('qif');
@@ -363,6 +369,33 @@ export function useImportWizard() {
         }
       } else {
         // QIF or OFX: parse all files
+
+        // For a single QIF file, check if it's a multi-account export
+        if (detectedFileType === 'qif' && fileArray.length === 1) {
+          const content = await fileArray[0].text();
+
+          // Quick check: does this file contain multiple !Account sections or !Type:Cat?
+          const accountMatches = content.match(/^!Account$/gm);
+          const hasCatSection = /^!Type:Cat\s*$/im.test(content);
+
+          if ((accountMatches && accountMatches.length > 1) || hasCatSection) {
+            // Multi-account QIF detected
+            const multiResult = await importApi.parseQifMultiAccount(content);
+
+            if (multiResult.isMultiAccount) {
+              setMultiAccountData(multiResult);
+              setMultiAccountContent(content);
+              setMultiAccountCurrency(defaultCurrency);
+              if (multiResult.detectedDateFormat) {
+                setDateFormat(multiResult.detectedDateFormat);
+              }
+              setStep('multiAccountReview');
+              setIsLoading(false);
+              return;
+            }
+          }
+        }
+
         const fileDataArray: ImportFileData[] = [];
         const allCats: Set<string> = new Set();
         const allTransferAccounts: Set<string> = new Set();
@@ -661,6 +694,32 @@ export function useImportWizard() {
     }
   };
 
+  const handleMultiAccountImport = async () => {
+    if (!multiAccountContent || !multiAccountData) return;
+
+    setIsLoading(true);
+    try {
+      const result = await importApi.importQifMultiAccount({
+        content: multiAccountContent,
+        currencyCode: multiAccountCurrency,
+        dateFormat,
+      });
+
+      setImportResult(result);
+      setStep('complete');
+
+      if (result.errors === 0) {
+        toast.success(`Successfully imported ${result.imported} transactions across ${multiAccountData.accounts.length} accounts`);
+      } else {
+        toast.success(`Imported ${result.imported} transactions with ${result.errors} errors`);
+      }
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Multi-account import failed'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleImport = async () => {
     if (importFiles.length === 0) return;
 
@@ -877,6 +936,9 @@ export function useImportWizard() {
     setSecurityMappings([]);
     setInitialLookupDone(false);
     setFileType('qif');
+    setMultiAccountData(null);
+    setMultiAccountContent('');
+    setMultiAccountCurrency(defaultCurrency);
     setCsvHeaders([]);
     setCsvSampleRows([]);
     setCsvColumnMapping(DEFAULT_CSV_COLUMN_MAPPING);
@@ -897,7 +959,9 @@ export function useImportWizard() {
     categoryOptions, parentCategoryOptions, getAccountOptions,
     accountTypeOptions: ACCOUNT_TYPE_OPTIONS, currencyOptions, getSecurityOptions, securityTypeOptions: SECURITY_TYPE_OPTIONS,
     shouldShowMapAccounts, preselectedAccount,
-    scrollContainerRef, dateFormat, defaultCurrency,
+    scrollContainerRef, dateFormat, setDateFormat, defaultCurrency,
+    // Multi-account QIF
+    multiAccountData, multiAccountCurrency, setMultiAccountCurrency, handleMultiAccountImport,
     // CSV-specific exports
     fileType,
     csvHeaders, csvSampleRows,

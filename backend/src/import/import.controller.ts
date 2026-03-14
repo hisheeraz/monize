@@ -21,6 +21,7 @@ import { ImportService } from "./import.service";
 import {
   ParseQifDto,
   ImportQifDto,
+  ImportQifMultiAccountDto,
   ParseOfxDto,
   ImportOfxDto,
   ParseCsvHeadersDto,
@@ -29,6 +30,7 @@ import {
   CreateColumnMappingDto,
   UpdateColumnMappingDto,
   ParsedQifResponseDto,
+  ParsedQifMultiAccountResponseDto,
   ImportResultDto,
   CsvHeadersResponseDto,
   ColumnMappingResponseDto,
@@ -69,6 +71,45 @@ export class ImportController {
     @Body() dto: ImportQifDto,
   ): Promise<ImportResultDto> {
     return this.importService.importQifFile(req.user.id, dto);
+  }
+
+  // --- Multi-account QIF ---
+
+  @Post("qif/multi-account/parse")
+  @ApiOperation({
+    summary:
+      "Parse a multi-account QIF file and return accounts, categories, and metadata",
+  })
+  @ApiResponse({
+    status: 200,
+    description: "Multi-account QIF file parsed successfully",
+    type: ParsedQifMultiAccountResponseDto,
+  })
+  async parseQifMultiAccount(
+    @Request() req,
+    @Body() dto: ParseQifDto,
+  ): Promise<ParsedQifMultiAccountResponseDto> {
+    return this.importService.parseQifMultiAccountFile(
+      req.user.id,
+      dto.content,
+    );
+  }
+
+  @Post("qif/multi-account")
+  @ApiOperation({
+    summary:
+      "Import a multi-account QIF file: auto-creates categories, accounts, and transactions",
+  })
+  @ApiResponse({
+    status: 201,
+    description: "Multi-account QIF imported successfully",
+    type: ImportResultDto,
+  })
+  async importQifMultiAccount(
+    @Request() req,
+    @Body() dto: ImportQifMultiAccountDto,
+  ): Promise<ImportResultDto> {
+    return this.importService.importQifMultiAccountFile(req.user.id, dto);
   }
 
   // --- OFX ---
