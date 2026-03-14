@@ -3,7 +3,6 @@ import {
   Get,
   Patch,
   Post,
-  Delete,
   Body,
   UseGuards,
   Request,
@@ -21,6 +20,8 @@ import { UsersService } from "./users.service";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
 import { UpdatePreferencesDto } from "./dto/update-preferences.dto";
 import { ChangePasswordDto } from "./dto/change-password.dto";
+import { DeleteAccountDto } from "./dto/delete-account.dto";
+import { DeleteDataDto } from "./dto/delete-data.dto";
 import { SkipPasswordCheck } from "../auth/decorators/skip-password-check.decorator";
 import { DemoRestricted } from "../common/decorators/demo-restricted.decorator";
 
@@ -83,13 +84,26 @@ export class UsersController {
     return { message: "Password changed successfully" };
   }
 
-  @Delete("account")
+  @Post("delete-account")
   @DemoRestricted()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Delete current user account" })
+  @ApiOperation({
+    summary: "Delete current user account with re-authentication",
+  })
   @ApiResponse({ status: 200, description: "Account deleted successfully" })
-  async deleteAccount(@Request() req) {
-    await this.usersService.deleteAccount(req.user.id);
+  @ApiResponse({ status: 401, description: "Invalid credentials" })
+  async deleteAccount(@Request() req, @Body() dto: DeleteAccountDto) {
+    await this.usersService.deleteAccount(req.user.id, dto);
     return { message: "Account deleted successfully" };
+  }
+
+  @Post("delete-data")
+  @DemoRestricted()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Delete user data with re-authentication" })
+  @ApiResponse({ status: 200, description: "Data deleted successfully" })
+  @ApiResponse({ status: 401, description: "Invalid credentials" })
+  async deleteData(@Request() req, @Body() dto: DeleteDataDto) {
+    return this.usersService.deleteData(req.user.id, dto);
   }
 }

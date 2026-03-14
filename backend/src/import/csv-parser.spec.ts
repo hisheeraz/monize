@@ -916,7 +916,7 @@ describe("CSV Parser", () => {
         expect(result.transactions[0].amount).toBe(650.23);
       });
 
-      it("forces negative amount positive when income keyword matches", () => {
+      it("keeps negative income amount negative (deduction/clawback)", () => {
         const csv = "Date,Amount,Type\n01/15/2026,-650.23,Income\n";
         const config = baseConfig({
           amountTypeColumn: 2,
@@ -924,7 +924,8 @@ describe("CSV Parser", () => {
         });
         const result = parseCsv(csv, config);
 
-        expect(result.transactions[0].amount).toBe(650.23);
+        // Negative amount + Income = deduction/clawback, stays negative
+        expect(result.transactions[0].amount).toBe(-650.23);
       });
 
       it("supports multiple income keywords", () => {
@@ -1048,7 +1049,7 @@ describe("CSV Parser", () => {
         expect(result.transferAccounts).toEqual(["Cash", "Freedom Unlimited"]);
       });
 
-      it("forces expense amount negative even if already negative", () => {
+      it("flips negative expense to positive (refund/reversal)", () => {
         const csv = "Date,Amount,Type\n01/15/2026,-50.00,Expense\n";
         const config = baseConfig({
           amountTypeColumn: 2,
@@ -1056,10 +1057,35 @@ describe("CSV Parser", () => {
         });
         const result = parseCsv(csv, config);
 
-        expect(result.transactions[0].amount).toBe(-50);
+        // Negative amount + Expense = refund/reversal, stored as positive
+        expect(result.transactions[0].amount).toBe(50);
       });
 
-      it("works with reverseSign (amountType applied after reverseSign)", () => {
+      it("considers original sign: negative expense becomes positive (refund)", () => {
+        const csv = "Date,Amount,Type\n01/15/2026,-45.00,Expense\n";
+        const config = baseConfig({
+          amountTypeColumn: 2,
+          expenseValues: ["Expense"],
+        });
+        const result = parseCsv(csv, config);
+
+        // Negative amount + Expense type = refund/reversal, stored as positive
+        expect(result.transactions[0].amount).toBe(45);
+      });
+
+      it("considers original sign: negative income stays negative (deduction)", () => {
+        const csv = "Date,Amount,Type\n01/15/2026,-200.00,Income\n";
+        const config = baseConfig({
+          amountTypeColumn: 2,
+          incomeValues: ["Income"],
+        });
+        const result = parseCsv(csv, config);
+
+        // Negative amount + Income type = deduction/clawback, stays negative
+        expect(result.transactions[0].amount).toBe(-200);
+      });
+
+      it("works with reverseSign (amountType uses raw CSV sign, not reversed sign)", () => {
         const csv = "Date,Amount,Type\n01/15/2026,50.00,Expense\n";
         const config = baseConfig({
           reverseSign: true,
@@ -1068,7 +1094,8 @@ describe("CSV Parser", () => {
         });
         const result = parseCsv(csv, config);
 
-        // reverseSign makes 50 -> -50, then expense forces -Math.abs(-50) = -50
+        // Raw CSV amount is positive 50, expense negates it to -50
+        // reverseSign made amount -50 already, but amountType uses rawAmount (50) to decide sign
         expect(result.transactions[0].amount).toBe(-50);
       });
 

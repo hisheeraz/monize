@@ -141,7 +141,7 @@ function SettingsContent() {
           </Link>
         )}
 
-        {!isDemoMode && <DangerZoneSection />}
+        {!isDemoMode && user && <DangerZoneSection user={user} />}
       </main>
 
       <p className="text-center text-xs text-gray-400 dark:text-gray-500 mt-8 mb-4">

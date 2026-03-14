@@ -4,7 +4,9 @@ import {
   NotFoundException,
   ConflictException,
   ForbiddenException,
+  UnauthorizedException,
 } from "@nestjs/common";
+import { DataSource } from "typeorm";
 import * as bcrypt from "bcryptjs";
 import { UsersService } from "./users.service";
 import { User } from "./entities/user.entity";
@@ -20,6 +22,7 @@ describe("UsersService", () => {
   let refreshTokensRepository: Record<string, jest.Mock>;
   let patRepository: Record<string, jest.Mock>;
   let passwordBreachService: { isBreached: jest.Mock };
+  let mockQueryRunner: Record<string, jest.Mock>;
 
   const mockUser = {
     id: "user-1",
@@ -79,6 +82,19 @@ describe("UsersService", () => {
       isBreached: jest.fn().mockResolvedValue(false),
     };
 
+    mockQueryRunner = {
+      connect: jest.fn(),
+      startTransaction: jest.fn(),
+      commitTransaction: jest.fn(),
+      rollbackTransaction: jest.fn(),
+      release: jest.fn(),
+      query: jest.fn().mockResolvedValue([null, 0]),
+    };
+
+    const mockDataSource = {
+      createQueryRunner: jest.fn().mockReturnValue(mockQueryRunner),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UsersService,
@@ -95,6 +111,7 @@ describe("UsersService", () => {
           provide: getRepositoryToken(PersonalAccessToken),
           useValue: patRepository,
         },
+        { provide: DataSource, useValue: mockDataSource },
         { provide: PasswordBreachService, useValue: passwordBreachService },
       ],
     }).compile();
@@ -455,10 +472,34 @@ describe("UsersService", () => {
   });
 
   describe("deleteAccount", () => {
-    it("deletes preferences, revokes tokens, then deletes user", async () => {
+    it("requires password for local auth users", async () => {
       usersRepository.findOne.mockResolvedValue({ ...mockUser });
 
-      await service.deleteAccount("user-1");
+      await expect(service.deleteAccount("user-1", {})).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it("rejects invalid password", async () => {
+      const hashedPassword = await bcrypt.hash("CorrectPass123!", 10);
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        passwordHash: hashedPassword,
+      });
+
+      await expect(
+        service.deleteAccount("user-1", { password: "WrongPass" }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it("deletes preferences, revokes tokens, then deletes user", async () => {
+      const hashedPassword = await bcrypt.hash("CorrectPass123!", 10);
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        passwordHash: hashedPassword,
+      });
+
+      await service.deleteAccount("user-1", { password: "CorrectPass123!" });
 
       expect(preferencesRepository.delete).toHaveBeenCalledWith({
         userId: "user-1",
@@ -471,9 +512,13 @@ describe("UsersService", () => {
     });
 
     it("revokes all PATs before deletion", async () => {
-      usersRepository.findOne.mockResolvedValue({ ...mockUser });
+      const hashedPassword = await bcrypt.hash("CorrectPass123!", 10);
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        passwordHash: hashedPassword,
+      });
 
-      await service.deleteAccount("user-1");
+      await service.deleteAccount("user-1", { password: "CorrectPass123!" });
 
       expect(patRepository.update).toHaveBeenCalledWith(
         { userId: "user-1", isRevoked: false },
@@ -484,33 +529,429 @@ describe("UsersService", () => {
     it("throws when user not found", async () => {
       usersRepository.findOne.mockResolvedValue(null);
 
-      await expect(service.deleteAccount("nonexistent")).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.deleteAccount("nonexistent", { password: "pass" }),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it("prevents the last admin from self-deleting", async () => {
+      const hashedPassword = await bcrypt.hash("CorrectPass123!", 10);
       usersRepository.findOne.mockResolvedValue({
         ...mockUser,
         role: "admin",
+        passwordHash: hashedPassword,
       });
       usersRepository.count.mockResolvedValue(1);
 
-      await expect(service.deleteAccount("user-1")).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(
+        service.deleteAccount("user-1", { password: "CorrectPass123!" }),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it("allows admin self-deletion when other admins exist", async () => {
+      const hashedPassword = await bcrypt.hash("CorrectPass123!", 10);
       usersRepository.findOne.mockResolvedValue({
         ...mockUser,
         role: "admin",
+        passwordHash: hashedPassword,
       });
       usersRepository.count.mockResolvedValue(2);
 
-      await service.deleteAccount("user-1");
+      await service.deleteAccount("user-1", { password: "CorrectPass123!" });
 
       expect(usersRepository.remove).toHaveBeenCalled();
+    });
+
+    it("accepts OIDC token for OIDC-only users", async () => {
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        authProvider: "oidc",
+        passwordHash: null,
+      });
+
+      await service.deleteAccount("user-1", {
+        oidcIdToken: "oidc-session-confirmed",
+      });
+
+      expect(usersRepository.remove).toHaveBeenCalled();
+    });
+
+    it("requires OIDC token for OIDC-only users", async () => {
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        authProvider: "oidc",
+        passwordHash: null,
+      });
+
+      await expect(service.deleteAccount("user-1", {})).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it("accepts OIDC token for OIDC users who also have a password", async () => {
+      const hashedPassword = await bcrypt.hash("CorrectPass123!", 10);
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        authProvider: "oidc",
+        passwordHash: hashedPassword,
+      });
+
+      await service.deleteAccount("user-1", {
+        oidcIdToken: "oidc-session-confirmed",
+      });
+
+      expect(usersRepository.remove).toHaveBeenCalled();
+    });
+  });
+
+  describe("deleteData", () => {
+    it("requires password for local auth users", async () => {
+      usersRepository.findOne.mockResolvedValue({ ...mockUser });
+
+      await expect(service.deleteData("user-1", {})).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it("rejects invalid password", async () => {
+      const hashedPassword = await bcrypt.hash("CorrectPass123!", 10);
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        passwordHash: hashedPassword,
+      });
+
+      await expect(
+        service.deleteData("user-1", { password: "WrongPass" }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it("deletes transaction data with valid password", async () => {
+      const hashedPassword = await bcrypt.hash("CorrectPass123!", 10);
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        passwordHash: hashedPassword,
+      });
+
+      const result = await service.deleteData("user-1", {
+        password: "CorrectPass123!",
+      });
+
+      expect(mockQueryRunner.connect).toHaveBeenCalled();
+      expect(mockQueryRunner.startTransaction).toHaveBeenCalled();
+      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
+      expect(mockQueryRunner.release).toHaveBeenCalled();
+      expect(result).toHaveProperty("deleted");
+    });
+
+    it("deletes optional data when flags are set", async () => {
+      const hashedPassword = await bcrypt.hash("CorrectPass123!", 10);
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        passwordHash: hashedPassword,
+      });
+
+      await service.deleteData("user-1", {
+        password: "CorrectPass123!",
+        deleteAccounts: true,
+        deleteCategories: true,
+        deletePayees: true,
+        deleteExchangeRates: true,
+      });
+
+      // Verify queries were made for optional deletions
+      const queries = mockQueryRunner.query.mock.calls.map((c) => c[0]);
+      expect(
+        queries.some((q: string) => q.includes("DELETE FROM accounts")),
+      ).toBe(true);
+      expect(
+        queries.some((q: string) => q.includes("DELETE FROM categories")),
+      ).toBe(true);
+      expect(
+        queries.some((q: string) => q.includes("DELETE FROM payees WHERE")),
+      ).toBe(true);
+      expect(
+        queries.some((q: string) =>
+          q.includes("DELETE FROM user_currency_preferences"),
+        ),
+      ).toBe(true);
+    });
+
+    it("resets account balances when accounts are not deleted", async () => {
+      const hashedPassword = await bcrypt.hash("CorrectPass123!", 10);
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        passwordHash: hashedPassword,
+      });
+
+      await service.deleteData("user-1", {
+        password: "CorrectPass123!",
+        deleteAccounts: false,
+      });
+
+      const queries = mockQueryRunner.query.mock.calls.map((c) => c[0]);
+      expect(
+        queries.some((q: string) =>
+          q.includes("UPDATE accounts SET current_balance = opening_balance"),
+        ),
+      ).toBe(true);
+    });
+
+    it("rolls back transaction on error", async () => {
+      const hashedPassword = await bcrypt.hash("CorrectPass123!", 10);
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        passwordHash: hashedPassword,
+      });
+      mockQueryRunner.query.mockRejectedValueOnce(new Error("DB error"));
+
+      await expect(
+        service.deleteData("user-1", { password: "CorrectPass123!" }),
+      ).rejects.toThrow("DB error");
+
+      expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
+      expect(mockQueryRunner.release).toHaveBeenCalled();
+    });
+
+    it("accepts OIDC token for OIDC-only users", async () => {
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        authProvider: "oidc",
+        passwordHash: null,
+      });
+
+      const result = await service.deleteData("user-1", {
+        oidcIdToken: "oidc-session-confirmed",
+      });
+
+      expect(result).toHaveProperty("deleted");
+      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
+    });
+
+    it("requires OIDC token for OIDC-only users", async () => {
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        authProvider: "oidc",
+        passwordHash: null,
+      });
+
+      await expect(service.deleteData("user-1", {})).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it("accepts OIDC token for OIDC users who also have a password", async () => {
+      const hashedPassword = await bcrypt.hash("CorrectPass123!", 10);
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        authProvider: "oidc",
+        passwordHash: hashedPassword,
+      });
+
+      const result = await service.deleteData("user-1", {
+        oidcIdToken: "oidc-session-confirmed",
+      });
+
+      expect(result).toHaveProperty("deleted");
+      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
+    });
+
+    it("throws when user not found", async () => {
+      usersRepository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.deleteData("nonexistent", { password: "pass" }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it("deletes core financial data (transactions, investments, budgets)", async () => {
+      const hashedPassword = await bcrypt.hash("CorrectPass123!", 10);
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        passwordHash: hashedPassword,
+      });
+
+      await service.deleteData("user-1", {
+        password: "CorrectPass123!",
+      });
+
+      const queries = mockQueryRunner.query.mock.calls.map(
+        (c: unknown[]) => c[0],
+      );
+      expect(
+        queries.some((q: string) =>
+          q.includes("DELETE FROM investment_transactions"),
+        ),
+      ).toBe(true);
+      expect(
+        queries.some((q: string) => q.includes("DELETE FROM holdings")),
+      ).toBe(true);
+      expect(
+        queries.some((q: string) => q.includes("DELETE FROM security_prices")),
+      ).toBe(true);
+      expect(
+        queries.some((q: string) => q.includes("DELETE FROM securities")),
+      ).toBe(true);
+      expect(
+        queries.some((q: string) => q.includes("DELETE FROM budget_alerts")),
+      ).toBe(true);
+      expect(
+        queries.some((q: string) => q.includes("DELETE FROM budgets")),
+      ).toBe(true);
+      expect(
+        queries.some((q: string) => q.includes("DELETE FROM transaction_tags")),
+      ).toBe(true);
+      expect(
+        queries.some((q: string) =>
+          q.includes("DELETE FROM transaction_splits"),
+        ),
+      ).toBe(true);
+      expect(
+        queries.some((q: string) => q.includes("DELETE FROM transactions")),
+      ).toBe(true);
+      expect(
+        queries.some((q: string) =>
+          q.includes("DELETE FROM scheduled_transactions"),
+        ),
+      ).toBe(true);
+      expect(
+        queries.some((q: string) =>
+          q.includes("DELETE FROM monthly_account_balances"),
+        ),
+      ).toBe(true);
+      expect(
+        queries.some((q: string) => q.includes("DELETE FROM custom_reports")),
+      ).toBe(true);
+      expect(queries.some((q: string) => q.includes("DELETE FROM tags"))).toBe(
+        true,
+      );
+    });
+
+    it("does not delete optional data when flags are false", async () => {
+      const hashedPassword = await bcrypt.hash("CorrectPass123!", 10);
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        passwordHash: hashedPassword,
+      });
+
+      await service.deleteData("user-1", {
+        password: "CorrectPass123!",
+        deleteAccounts: false,
+        deleteCategories: false,
+        deletePayees: false,
+        deleteExchangeRates: false,
+      });
+
+      const queries = mockQueryRunner.query.mock.calls.map(
+        (c: unknown[]) => c[0],
+      );
+      expect(
+        queries.some(
+          (q: string) => q === "DELETE FROM accounts WHERE user_id = $1",
+        ),
+      ).toBe(false);
+      expect(
+        queries.some(
+          (q: string) => q === "DELETE FROM categories WHERE user_id = $1",
+        ),
+      ).toBe(false);
+      expect(
+        queries.some(
+          (q: string) => q === "DELETE FROM payees WHERE user_id = $1",
+        ),
+      ).toBe(false);
+      expect(
+        queries.some(
+          (q: string) =>
+            q === "DELETE FROM user_currency_preferences WHERE user_id = $1",
+        ),
+      ).toBe(false);
+    });
+
+    it("clears FK references before deleting categories", async () => {
+      const hashedPassword = await bcrypt.hash("CorrectPass123!", 10);
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        passwordHash: hashedPassword,
+      });
+
+      await service.deleteData("user-1", {
+        password: "CorrectPass123!",
+        deleteCategories: true,
+      });
+
+      const queries = mockQueryRunner.query.mock.calls.map(
+        (c: unknown[]) => c[0],
+      );
+      expect(
+        queries.some((q: string) =>
+          q.includes("UPDATE payees SET default_category_id = NULL"),
+        ),
+      ).toBe(true);
+      expect(
+        queries.some((q: string) =>
+          q.includes("UPDATE accounts SET principal_category_id = NULL"),
+        ),
+      ).toBe(true);
+    });
+
+    it("deletes payee_aliases when deleting payees", async () => {
+      const hashedPassword = await bcrypt.hash("CorrectPass123!", 10);
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        passwordHash: hashedPassword,
+      });
+
+      await service.deleteData("user-1", {
+        password: "CorrectPass123!",
+        deletePayees: true,
+      });
+
+      const queries = mockQueryRunner.query.mock.calls.map(
+        (c: unknown[]) => c[0],
+      );
+      expect(
+        queries.some((q: string) => q.includes("DELETE FROM payee_aliases")),
+      ).toBe(true);
+    });
+
+    it("does not reset balances when accounts are being deleted", async () => {
+      const hashedPassword = await bcrypt.hash("CorrectPass123!", 10);
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        passwordHash: hashedPassword,
+      });
+
+      await service.deleteData("user-1", {
+        password: "CorrectPass123!",
+        deleteAccounts: true,
+      });
+
+      const queries = mockQueryRunner.query.mock.calls.map(
+        (c: unknown[]) => c[0],
+      );
+      expect(
+        queries.some((q: string) =>
+          q.includes("UPDATE accounts SET current_balance = opening_balance"),
+        ),
+      ).toBe(false);
+    });
+
+    it("passes userId to all deletion queries", async () => {
+      const hashedPassword = await bcrypt.hash("CorrectPass123!", 10);
+      usersRepository.findOne.mockResolvedValue({
+        ...mockUser,
+        passwordHash: hashedPassword,
+      });
+
+      await service.deleteData("user-1", {
+        password: "CorrectPass123!",
+      });
+
+      for (const call of mockQueryRunner.query.mock.calls) {
+        if (call[1]) {
+          expect(call[1]).toContain("user-1");
+        }
+      }
     });
   });
 });

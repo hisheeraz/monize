@@ -546,8 +546,10 @@ export function parseCsv(
 
     // Extract and parse the amount
     let amount = 0;
+    let rawAmount = 0; // Original parsed amount before reverseSign
     if (config.amount !== undefined) {
       amount = parseCsvAmount(getField(row, config.amount)) ?? 0;
+      rawAmount = amount;
       if (config.reverseSign) {
         amount = -amount;
       }
@@ -637,9 +639,20 @@ export function parseCsv(
           transferAccount = transferAcctName;
           category = "";
         } else if (expenseVals.includes(typeValue)) {
+          // Negate the amount: positive becomes negative (outflow),
+          // already-negative becomes positive (refund/reversal).
+          // This respects the original sign rather than forcing -Math.abs().
           amount = -Math.abs(amount);
+          if (rawAmount < 0) {
+            amount = Math.abs(amount);
+          }
         } else if (incomeVals.includes(typeValue)) {
+          // Positive stays positive (inflow). Negative stays negative
+          // (the CSV already encodes a reversal / deduction).
           amount = Math.abs(amount);
+          if (rawAmount < 0) {
+            amount = -Math.abs(amount);
+          }
         }
       }
     }

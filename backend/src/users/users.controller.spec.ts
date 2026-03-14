@@ -149,11 +149,28 @@ describe("UsersController", () => {
   describe("deleteAccount()", () => {
     it("delegates to usersService.deleteAccount and returns success message", async () => {
       mockUsersService.deleteAccount.mockResolvedValue(undefined);
+      const dto = { password: "mypass" };
 
-      const result = await controller.deleteAccount(mockReq);
+      const result = await controller.deleteAccount(mockReq, dto);
 
       expect(result).toEqual({ message: "Account deleted successfully" });
-      expect(mockUsersService.deleteAccount).toHaveBeenCalledWith("user-1");
+      expect(mockUsersService.deleteAccount).toHaveBeenCalledWith(
+        "user-1",
+        dto,
+      );
+    });
+  });
+
+  describe("deleteData()", () => {
+    it("delegates to usersService.deleteData and returns result", async () => {
+      const deleted = { transactions: 50, securities: 10 };
+      mockUsersService.deleteData = jest.fn().mockResolvedValue({ deleted });
+      const dto = { password: "mypass", deleteAccounts: true };
+
+      const result = await controller.deleteData(mockReq, dto);
+
+      expect(result).toEqual({ deleted });
+      expect(mockUsersService.deleteData).toHaveBeenCalledWith("user-1", dto);
     });
   });
 });

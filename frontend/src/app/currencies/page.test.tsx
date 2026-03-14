@@ -457,6 +457,85 @@ describe('CurrenciesPage', () => {
     });
   });
 
+  it('updates currency state inline after deactivation without reloading', async () => {
+    mockDeactivateCurrency.mockResolvedValue(undefined);
+    render(<CurrenciesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('currency-list')).toBeInTheDocument();
+    });
+
+    // Clear mock call counts from initial load
+    mockGetCurrencies.mockClear();
+    mockGetCurrencyUsage.mockClear();
+
+    fireEvent.click(screen.getByTestId('toggle-USD'));
+    await waitFor(() => {
+      expect(mockDeactivateCurrency).toHaveBeenCalledWith('USD');
+    });
+
+    // Should NOT re-fetch data from API (inline update)
+    expect(mockGetCurrencies).not.toHaveBeenCalled();
+    expect(mockGetCurrencyUsage).not.toHaveBeenCalled();
+  });
+
+  it('updates summary counts after inline deactivation', async () => {
+    mockDeactivateCurrency.mockResolvedValue(undefined);
+    render(<CurrenciesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('summary-Active')).toHaveTextContent('2');
+      expect(screen.getByTestId('summary-Inactive')).toHaveTextContent('1');
+    });
+
+    // Deactivate USD: active goes from 2 to 1, inactive from 1 to 2
+    fireEvent.click(screen.getByTestId('toggle-USD'));
+    await waitFor(() => {
+      expect(screen.getByTestId('summary-Active')).toHaveTextContent('1');
+      expect(screen.getByTestId('summary-Inactive')).toHaveTextContent('2');
+    });
+  });
+
+  it('activates an inactive currency inline', async () => {
+    mockActivateCurrency.mockResolvedValue(undefined);
+    render(<CurrenciesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('currency-list')).toBeInTheDocument();
+    });
+
+    // Switch to All view to see inactive EUR
+    fireEvent.click(screen.getByText(/All \(3\)/));
+    await waitFor(() => {
+      expect(screen.getByTestId('currency-row-EUR')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('toggle-EUR'));
+    await waitFor(() => {
+      expect(mockActivateCurrency).toHaveBeenCalledWith('EUR');
+    });
+
+    // Summary should update: active 3, inactive 0
+    await waitFor(() => {
+      expect(screen.getByTestId('summary-Active')).toHaveTextContent('3');
+      expect(screen.getByTestId('summary-Inactive')).toHaveTextContent('0');
+    });
+  });
+
+  it('does not update state when toggle fails', async () => {
+    mockDeactivateCurrency.mockRejectedValue(new Error('API error'));
+    render(<CurrenciesPage />);
+    await waitFor(() => {
+      expect(screen.getByTestId('currency-list')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('toggle-USD'));
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('Failed to update currency status');
+    });
+
+    // Summary counts should remain unchanged
+    expect(screen.getByTestId('summary-Active')).toHaveTextContent('2');
+    expect(screen.getByTestId('summary-Inactive')).toHaveTextContent('1');
+  });
+
   it('shows singular "currency" for count of 1', async () => {
     mockGetCurrencies.mockResolvedValue([
       { code: 'CAD', name: 'Canadian Dollar', symbol: 'CA$', decimalPlaces: 2, isActive: true, createdAt: '2026-01-01' },
