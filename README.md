@@ -25,8 +25,11 @@
 
 A comprehensive personal finance management application built with NestJS and Next.js. Designed as a replacement for Microsoft Money. 100% built using farm-fresh, free-range Claude Code.
 
-**[Wiki](https://github.com/kenlasko/monize/wiki)**
-**[Live Demo](https://monize-demo.ucdialplans.com)**
+<div align="center">
+
+### [**Live Demo**](https://monize-demo.ucdialplans.com) | [**Wiki**](https://github.com/kenlasko/monize/wiki)
+
+</div>
 
 ## Why This Exists?
 The personal finance ecosystem is flooded with personal finance platforms. I've tried many of them, but every single one of them had deal-breakers I couldn't work with. I finally decided to try my hand at creating my own platform that met all my criteria by using  "vibe-coding", which is a dirty word in the self-hosting community. I just wanted to see what was possible with the current state of AI. It turned out to be more successful than I ever could have imagined, which is why I'm making this available for others.
