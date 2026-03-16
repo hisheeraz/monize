@@ -1404,4 +1404,174 @@ describe("ImportRegularProcessorService", () => {
       expect(pendingUpdate[2].referenceNumber).toBe("REF-123");
     });
   });
+
+  describe("split transfer FK safety", () => {
+    it("should not delete current transaction when two splits transfer to the same account with the same amount", async () => {
+      const accountMap = new Map<string, string | null>();
+      accountMap.set("Savings", "acc-savings");
+      const ctx = makeContext({ accountMap });
+
+      // Track the savedTx id assigned during processTransaction
+      let savedTxId: string | null = null;
+      let linkedTxId: string | null = null;
+      const originalCreate = ctx.queryRunner.manager.create;
+      let createCallIndex = 0;
+      ctx.queryRunner.manager.create = jest
+        .fn()
+        .mockImplementation((_cls: any, data: any) => {
+          createCallIndex++;
+          const entity = { ...data, id: `gen-${createCallIndex}` };
+          // The first create is the main transaction
+          if (createCallIndex === 1) savedTxId = entity.id;
+          return entity;
+        });
+
+      // QB calls sequence:
+      // 1. isDuplicateTransfer (regular) -> null
+      // 2. isDuplicateTransfer (split-linked) -> null
+      // 3. matchPendingTransfer -> returns false (not a transfer at top level)
+      // Then for S1's processSplitTransfer:
+      // 4. existingLinkedTx query -> null (no existing, so it creates a new linked tx)
+      // 5. pendingTransfer query -> null
+      // Then for S2's processSplitTransfer:
+      // 6. existingLinkedTx query -> should NOT match L1 because L1.linkedTransactionId = savedTx.id
+      // 7. pendingTransfer query -> null
+      let qbCallCount = 0;
+      ctx.queryRunner.manager.createQueryBuilder.mockImplementation(() => {
+        qbCallCount++;
+        return makeMockQueryBuilder(null);
+      });
+
+      ctx.queryRunner.manager.findOne.mockImplementation(
+        (_entity: any, opts: any) => {
+          // Account lookup for balance updates
+          if (opts?.where?.id === "acc-savings") {
+            return Promise.resolve({
+              id: "acc-savings",
+              currentBalance: 1000,
+              currencyCode: "CAD",
+            });
+          }
+          if (opts?.where?.id === accountId) {
+            return Promise.resolve({
+              id: accountId,
+              currentBalance: 500,
+            });
+          }
+          return Promise.resolve(null);
+        },
+      );
+
+      const qifTx = {
+        date: "2025-01-15",
+        amount: -200,
+        splits: [
+          {
+            amount: -100,
+            isTransfer: true,
+            transferAccount: "Savings",
+            memo: "Transfer 1",
+          },
+          {
+            amount: -100,
+            isTransfer: true,
+            transferAccount: "Savings",
+            memo: "Transfer 2",
+          },
+        ],
+      };
+
+      await service.processTransaction(ctx, qifTx);
+
+      // The current transaction should never be deleted
+      const deleteCalls = ctx.queryRunner.manager.delete.mock.calls;
+      const deletedSavedTx = deleteCalls.find(
+        (call: any) => call[1] === savedTxId,
+      );
+      expect(deletedSavedTx).toBeUndefined();
+
+      // Should have imported successfully
+      expect(ctx.importResult.imported).toBe(1);
+    });
+
+    it("should not match linked transactions that already point to the current transaction", async () => {
+      const accountMap = new Map<string, string | null>();
+      accountMap.set("Savings", "acc-savings");
+      const categoryMap = new Map<string, string | null>();
+      categoryMap.set("Toys", "cat-toys");
+      const ctx = makeContext({ accountMap, categoryMap });
+
+      let createCallIndex = 0;
+      let savedTxId: string | null = null;
+      ctx.queryRunner.manager.create = jest
+        .fn()
+        .mockImplementation((_cls: any, data: any) => {
+          createCallIndex++;
+          const entity = { ...data, id: `gen-${createCallIndex}` };
+          if (createCallIndex === 1) savedTxId = entity.id;
+          return entity;
+        });
+
+      // For the existingLinkedTx query, we simulate finding a transaction
+      // whose linkedTransactionId equals savedTx.id (created by a prior split).
+      // The fix should filter this out via the andWhere condition.
+      let qbCallCount = 0;
+      ctx.queryRunner.manager.createQueryBuilder.mockImplementation(() => {
+        qbCallCount++;
+        const qb = makeMockQueryBuilder(null);
+        // Track andWhere calls to verify the new filter is applied
+        const andWhereCalls: string[] = [];
+        qb.andWhere.mockImplementation((condition: string) => {
+          andWhereCalls.push(condition);
+          return qb;
+        });
+        (qb as any).andWhereCalls = andWhereCalls;
+        return qb;
+      });
+
+      ctx.queryRunner.manager.findOne.mockImplementation(
+        (_entity: any, opts: any) => {
+          if (opts?.where?.id === "acc-savings") {
+            return Promise.resolve({
+              id: "acc-savings",
+              currentBalance: 1000,
+              currencyCode: "CAD",
+            });
+          }
+          if (opts?.where?.id === accountId) {
+            return Promise.resolve({ id: accountId, currentBalance: 500 });
+          }
+          return Promise.resolve(null);
+        },
+      );
+
+      const qifTx = {
+        date: "2025-01-15",
+        amount: -187.3,
+        splits: [
+          {
+            amount: -100,
+            isTransfer: true,
+            transferAccount: "Savings",
+            memo: "Transfer",
+          },
+          { amount: -87.3, category: "Toys", memo: "Lego Mando" },
+        ],
+      };
+
+      await service.processTransaction(ctx, qifTx);
+
+      // The main transaction must not be deleted
+      const deleteCalls = ctx.queryRunner.manager.delete.mock.calls;
+      const deletedSavedTx = deleteCalls.find(
+        (call: any) => call[1] === savedTxId,
+      );
+      expect(deletedSavedTx).toBeUndefined();
+
+      // Should have created split entries for both splits
+      const saveCalls = ctx.queryRunner.manager.save.mock.calls;
+      expect(saveCalls.length).toBeGreaterThanOrEqual(3); // transaction + 2 splits + linked tx
+      expect(ctx.importResult.imported).toBe(1);
+    });
+  });
 });

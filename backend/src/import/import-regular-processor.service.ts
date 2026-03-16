@@ -424,6 +424,9 @@ export class ImportRegularProcessorService {
     const linkedAmount = -split.amount;
 
     // Check for existing linked transaction
+    // Exclude transactions already linked to the current transaction (savedTx)
+    // to prevent a second split transfer from matching the linked transaction
+    // created by a prior split transfer in the same parent transaction.
     const existingLinkedTx = await ctx.queryRunner.manager
       .createQueryBuilder(Transaction, "t")
       .where("t.user_id = :userId", { userId: ctx.userId })
@@ -433,6 +436,10 @@ export class ImportRegularProcessorService {
       .andWhere("t.transaction_date = :date", { date: qifTx.date })
       .andWhere("t.amount = :amount", { amount: linkedAmount })
       .andWhere("t.is_transfer = true")
+      .andWhere(
+        "(t.linked_transaction_id IS NULL OR t.linked_transaction_id != :currentTxId)",
+        { currentTxId: savedTx.id },
+      )
       .getOne();
 
     if (existingLinkedTx) {
@@ -544,7 +551,7 @@ export class ImportRegularProcessorService {
           accountId: ctx.accountId,
         },
       });
-      if (placeholderTx) {
+      if (placeholderTx && placeholderTx.id !== savedTx.id) {
         await updateAccountBalance(
           ctx.queryRunner,
           ctx.accountId,
