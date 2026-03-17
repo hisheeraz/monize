@@ -775,7 +775,11 @@ export class BackupService {
         delete filteredRow.created_at;
 
         const columns = Object.keys(filteredRow);
-        const values = Object.values(filteredRow);
+        const values = Object.values(filteredRow).map((v) =>
+          v !== null && typeof v === "object" && !(v instanceof Date)
+            ? JSON.stringify(v)
+            : v,
+        );
         if (columns.length === 0) continue;
 
         const columnList = columns.map((c) => `"${c}"`).join(", ");
@@ -893,7 +897,13 @@ export class BackupService {
       }
 
       const columns = Object.keys(filteredRow);
-      const values = Object.values(filteredRow);
+      // Stringify any array/object values for JSONB columns -- PostgreSQL
+      // requires JSON text, not native JS objects, in parameterised queries.
+      const values = Object.values(filteredRow).map((v) =>
+        v !== null && typeof v === "object" && !(v instanceof Date)
+          ? JSON.stringify(v)
+          : v,
+      );
 
       if (columns.length === 0) {
         continue;

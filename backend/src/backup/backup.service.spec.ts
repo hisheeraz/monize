@@ -493,6 +493,64 @@ describe("BackupService", () => {
       expect(currencyInsert[1]).toContain(userId);
     });
 
+    it("should stringify JSONB values (arrays/objects) for PostgreSQL parameters", async () => {
+      mockUserRepo.findOne.mockResolvedValue(mockUser);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      const sectorWeightings = [
+        { sector: "Technology", weight: 0.25 },
+        { sector: "Healthcare", weight: 0.15 },
+      ];
+      const backupWithJsonb = {
+        ...validBackupData,
+        securities: [
+          {
+            id: "sec-1",
+            user_id: userId,
+            symbol: "VEA",
+            name: "Vanguard FTSE",
+            security_type: "ETF",
+            currency_code: "USD",
+            is_active: true,
+            sector_weightings: sectorWeightings,
+          },
+        ],
+        scheduled_transactions: [
+          {
+            id: "sched-1",
+            user_id: userId,
+            account_id: "acc-1",
+            tag_ids: ["tag-1", "tag-2"],
+          },
+        ],
+      };
+
+      await service.restoreData(
+        userId,
+        makeInput({
+          password: "test",
+          data: backupWithJsonb,
+        }),
+      );
+
+      // Find the securities INSERT call
+      const insertCalls = mockQueryRunner.query.mock.calls.filter(
+        (call: unknown[]) =>
+          typeof call[0] === "string" && call[0].includes("INSERT INTO"),
+      );
+      const securitiesInsert = insertCalls.find(
+        (call: unknown[]) =>
+          typeof call[0] === "string" && call[0].includes('"securities"'),
+      );
+      expect(securitiesInsert).toBeDefined();
+      // The sector_weightings value should be a JSON string, not a raw array
+      const params = securitiesInsert![1] as unknown[];
+      const jsonParam = params.find(
+        (p) => typeof p === "string" && p.includes("Technology"),
+      );
+      expect(jsonParam).toBe(JSON.stringify(sectorWeightings));
+    });
+
     it("should accept OIDC re-auth for OIDC users", async () => {
       mockUserRepo.findOne.mockResolvedValue({
         ...mockUser,
