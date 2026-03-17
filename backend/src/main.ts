@@ -137,6 +137,14 @@ async function bootstrap() {
   const logger = new Logger("Bootstrap");
   const port = process.env.PORT || 3001;
   await app.listen(port);
+
+  // Increase HTTP server timeouts for large backup uploads (100mb+).
+  // Default requestTimeout is 5 min which may not be enough when uploading
+  // through multiple proxy layers on slower connections.
+  const server = app.getHttpServer();
+  server.requestTimeout = 600000; // 10 minutes
+  server.headersTimeout = 605000; // must be > requestTimeout
+
   logger.log(`Application is running on: http://localhost:${port}`);
   if (process.env.NODE_ENV !== "production") {
     logger.log(`API Documentation: http://localhost:${port}/api/docs`);
