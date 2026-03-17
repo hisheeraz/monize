@@ -36,10 +36,11 @@ async function bootstrap() {
   // Trust first proxy (Docker/nginx) so req.ip reflects the real client IP
   app.getHttpAdapter().getInstance().set("trust proxy", 1);
 
-  // Higher body size limit for backup restore (can contain years of financial data)
+  // Backup restore accepts gzip-compressed binary (compressed on the client
+  // to avoid multi-minute uploads of 100mb+ JSON files).
   app.use(
     "/api/v1/backup/restore",
-    express.json({ limit: "100mb" }),
+    express.raw({ limit: "100mb", type: "application/gzip" }),
   );
 
   // Default body size limit for regular endpoints (QIF imports, etc.)
@@ -105,6 +106,8 @@ async function bootstrap() {
       "Authorization",
       "Accept",
       "X-CSRF-Token",
+      "X-Restore-Password",
+      "X-Restore-OIDC-Token",
       "Mcp-Session-Id",
     ],
     exposedHeaders: ["Mcp-Session-Id"],

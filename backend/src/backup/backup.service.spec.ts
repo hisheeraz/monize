@@ -1,12 +1,21 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import { DataSource } from "typeorm";
-import { UnauthorizedException, BadRequestException, NotFoundException } from "@nestjs/common";
-import { BackupService } from "./backup.service";
+import {
+  UnauthorizedException,
+  BadRequestException,
+  NotFoundException,
+} from "@nestjs/common";
+import { gzipSync } from "zlib";
+import { BackupService, RestoreBackupInput } from "./backup.service";
 import { User } from "../users/entities/user.entity";
 import * as bcrypt from "bcryptjs";
 
 jest.mock("bcryptjs");
+
+function compressBackupData(data: Record<string, unknown>): Buffer {
+  return gzipSync(Buffer.from(JSON.stringify(data), "utf-8"));
+}
 
 describe("BackupService", () => {
   let service: BackupService;
@@ -83,7 +92,9 @@ describe("BackupService", () => {
       await service.streamExport(userId, mockRes as any);
 
       // Reconstruct the streamed JSON
-      const output = mockRes.write.mock.calls.map((c: unknown[]) => c[0]).join("");
+      const output = mockRes.write.mock.calls
+        .map((c: unknown[]) => c[0])
+        .join("");
       const result = JSON.parse(output);
 
       expect(result.version).toBe(1);
@@ -99,7 +110,9 @@ describe("BackupService", () => {
 
       await service.streamExport(userId, mockRes as any);
 
-      const output = mockRes.write.mock.calls.map((c: unknown[]) => c[0]).join("");
+      const output = mockRes.write.mock.calls
+        .map((c: unknown[]) => c[0])
+        .join("");
       const result = JSON.parse(output);
 
       expect(result.version).toBe(1);
@@ -142,23 +155,32 @@ describe("BackupService", () => {
       monthly_account_balances: [],
     };
 
+    function makeInput(
+      overrides: Partial<RestoreBackupInput> & {
+        data?: Record<string, unknown>;
+      } = {},
+    ): RestoreBackupInput {
+      const { data, ...rest } = overrides;
+      return {
+        compressedData: compressBackupData(data ?? validBackupData),
+        ...rest,
+      };
+    }
+
     it("should throw NotFoundException if user not found", async () => {
       mockUserRepo.findOne.mockResolvedValue(null);
 
       await expect(
-        service.restoreData(userId, {
-          password: "test",
-          data: validBackupData,
-        }),
+        service.restoreData(userId, makeInput({ password: "test" })),
       ).rejects.toThrow(NotFoundException);
     });
 
     it("should throw UnauthorizedException if password is missing for local user", async () => {
       mockUserRepo.findOne.mockResolvedValue(mockUser);
 
-      await expect(
-        service.restoreData(userId, { data: validBackupData }),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.restoreData(userId, makeInput())).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it("should throw UnauthorizedException if password is invalid", async () => {
@@ -166,10 +188,7 @@ describe("BackupService", () => {
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
       await expect(
-        service.restoreData(userId, {
-          password: "wrong-password",
-          data: validBackupData,
-        }),
+        service.restoreData(userId, makeInput({ password: "wrong-password" })),
       ).rejects.toThrow(UnauthorizedException);
     });
 
@@ -180,9 +199,9 @@ describe("BackupService", () => {
         passwordHash: null,
       });
 
-      await expect(
-        service.restoreData(userId, { data: validBackupData }),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.restoreData(userId, makeInput())).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it("should throw BadRequestException for invalid backup version", async () => {
@@ -190,10 +209,13 @@ describe("BackupService", () => {
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
       await expect(
-        service.restoreData(userId, {
-          password: "test",
-          data: { ...validBackupData, version: 999 },
-        }),
+        service.restoreData(
+          userId,
+          makeInput({
+            password: "test",
+            data: { ...validBackupData, version: 999 },
+          }),
+        ),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -203,9 +225,36 @@ describe("BackupService", () => {
 
       const badData = { ...validBackupData, exportedAt: undefined };
       await expect(
+        service.restoreData(
+          userId,
+          makeInput({
+            password: "test",
+            data: badData as any,
+          }),
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it("should throw BadRequestException for invalid gzip data", async () => {
+      mockUserRepo.findOne.mockResolvedValue(mockUser);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      await expect(
         service.restoreData(userId, {
+          compressedData: Buffer.from("not-gzip-data"),
           password: "test",
-          data: badData as any,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it("should throw BadRequestException for gzip of non-JSON content", async () => {
+      mockUserRepo.findOne.mockResolvedValue(mockUser);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+
+      await expect(
+        service.restoreData(userId, {
+          compressedData: gzipSync(Buffer.from("not json")),
+          password: "test",
         }),
       ).rejects.toThrow(BadRequestException);
     });
@@ -220,14 +269,22 @@ describe("BackupService", () => {
           { id: "cat-1", user_id: userId, name: "Food", parent_id: null },
         ],
         accounts: [
-          { id: "acc-1", user_id: userId, name: "Checking", account_type: "CHEQUING" },
+          {
+            id: "acc-1",
+            user_id: userId,
+            name: "Checking",
+            account_type: "CHEQUING",
+          },
         ],
       };
 
-      const result = await service.restoreData(userId, {
-        password: "test",
-        data: backupWithData,
-      });
+      const result = await service.restoreData(
+        userId,
+        makeInput({
+          password: "test",
+          data: backupWithData,
+        }),
+      );
 
       expect(result.message).toBe("Backup restored successfully");
       expect(result.restored.categories).toBe(1);
@@ -244,10 +301,7 @@ describe("BackupService", () => {
       mockQueryRunner.query.mockRejectedValueOnce(new Error("DB error"));
 
       await expect(
-        service.restoreData(userId, {
-          password: "test",
-          data: validBackupData,
-        }),
+        service.restoreData(userId, makeInput({ password: "test" })),
       ).rejects.toThrow("DB error");
 
       expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
@@ -265,17 +319,22 @@ describe("BackupService", () => {
         ],
       };
 
-      await service.restoreData(userId, {
-        password: "test",
-        data: backupWithDifferentUser,
-      });
+      await service.restoreData(
+        userId,
+        makeInput({
+          password: "test",
+          data: backupWithDifferentUser,
+        }),
+      );
 
       // Verify the INSERT query was called with the current user's ID
       const insertCalls = mockQueryRunner.query.mock.calls.filter(
-        (call: unknown[]) => typeof call[0] === "string" && call[0].includes("INSERT INTO"),
+        (call: unknown[]) =>
+          typeof call[0] === "string" && call[0].includes("INSERT INTO"),
       );
       const categoryInsert = insertCalls.find(
-        (call: unknown[]) => typeof call[0] === "string" && call[0].includes("categories"),
+        (call: unknown[]) =>
+          typeof call[0] === "string" && call[0].includes("categories"),
       );
       if (categoryInsert) {
         expect(categoryInsert[1]).toContain(userId);
@@ -289,10 +348,12 @@ describe("BackupService", () => {
         passwordHash: null,
       });
 
-      const result = await service.restoreData(userId, {
-        oidcIdToken: "oidc-session-confirmed",
-        data: validBackupData,
-      });
+      const result = await service.restoreData(
+        userId,
+        makeInput({
+          oidcIdToken: "oidc-session-confirmed",
+        }),
+      );
 
       expect(result.message).toBe("Backup restored successfully");
     });

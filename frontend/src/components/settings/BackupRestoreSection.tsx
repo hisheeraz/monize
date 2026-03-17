@@ -62,23 +62,13 @@ export function BackupRestoreSection({ user }: BackupRestoreSectionProps) {
 
     setIsRestoring(true);
     try {
-      const text = await restoreFile.text();
-      let backupData: Record<string, unknown>;
-      try {
-        backupData = JSON.parse(text);
-      } catch {
-        toast.error('Invalid backup file: not valid JSON');
-        setIsRestoring(false);
-        return;
-      }
-
       const authData = isOidc
         ? { oidcIdToken: 'oidc-session-confirmed' }
         : { password: restorePassword };
 
       const result = await backupApi.restoreBackup({
+        file: restoreFile,
         ...authData,
-        data: backupData,
       });
 
       const totalRestored = Object.values(result.restored).reduce(

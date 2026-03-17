@@ -123,7 +123,7 @@ describe('BackupRestoreSection', () => {
     expect(confirmButton).toBeDisabled();
   });
 
-  it('restores backup successfully', async () => {
+  it('restores backup successfully by sending file to API', async () => {
     (backupApi.restoreBackup as ReturnType<typeof vi.fn>).mockResolvedValue({
       message: 'Backup restored successfully',
       restored: { categories: 5, accounts: 3 },
@@ -149,18 +149,22 @@ describe('BackupRestoreSection', () => {
     await waitFor(() => {
       expect(backupApi.restoreBackup).toHaveBeenCalledWith({
         password: 'testpass',
-        data: { version: 1, exportedAt: '2026-01-01' },
+        file: expect.any(File),
       });
       expect(toast.success).toHaveBeenCalledWith('Restored 8 records successfully');
     });
   });
 
-  it('shows error for invalid JSON file', async () => {
+  it('shows error toast on restore failure', async () => {
+    (backupApi.restoreBackup as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('Server error'),
+    );
+
     render(<BackupRestoreSection user={localUser} />);
 
     fireEvent.click(screen.getByText('Restore from Backup...'));
 
-    const file = new File(['not-json'], 'bad.json', { type: 'application/json' });
+    const file = new File(['{}'], 'backup.json', { type: 'application/json' });
     const fileInput = screen.getByLabelText('Select backup file') as HTMLInputElement;
     fireEvent.change(fileInput, { target: { files: [file] } });
 
@@ -170,7 +174,7 @@ describe('BackupRestoreSection', () => {
     fireEvent.click(screen.getByText('Confirm Restore'));
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Invalid backup file: not valid JSON');
+      expect(toast.error).toHaveBeenCalledWith('Failed to restore backup');
     });
   });
 });

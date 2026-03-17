@@ -8,8 +8,14 @@ import {
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, DataSource } from "typeorm";
 import * as bcrypt from "bcryptjs";
+import { gunzipSync } from "zlib";
 import { User } from "../users/entities/user.entity";
-import { RestoreBackupDto } from "./dto/restore-backup.dto";
+
+export interface RestoreBackupInput {
+  compressedData: Buffer;
+  password?: string;
+  oidcIdToken?: string;
+}
 
 const BACKUP_VERSION = 1;
 
@@ -54,17 +60,41 @@ export class BackupService {
     private readonly dataSource: DataSource,
   ) {}
 
-  async streamExport(userId: string, res: import("express").Response): Promise<void> {
+  async streamExport(
+    userId: string,
+    res: import("express").Response,
+  ): Promise<void> {
     this.logger.log(`Starting backup export for user ${userId}`);
 
     const tableQueries: Array<{ key: string; sql: string }> = [
-      { key: "user_preferences", sql: "SELECT * FROM user_preferences WHERE user_id = $1" },
-      { key: "user_currency_preferences", sql: "SELECT * FROM user_currency_preferences WHERE user_id = $1" },
-      { key: "categories", sql: "SELECT * FROM categories WHERE user_id = $1 ORDER BY parent_id NULLS FIRST, name" },
-      { key: "payees", sql: "SELECT * FROM payees WHERE user_id = $1 ORDER BY name" },
-      { key: "payee_aliases", sql: "SELECT * FROM payee_aliases WHERE user_id = $1" },
-      { key: "accounts", sql: "SELECT * FROM accounts WHERE user_id = $1 ORDER BY name" },
-      { key: "tags", sql: "SELECT * FROM tags WHERE user_id = $1 ORDER BY name" },
+      {
+        key: "user_preferences",
+        sql: "SELECT * FROM user_preferences WHERE user_id = $1",
+      },
+      {
+        key: "user_currency_preferences",
+        sql: "SELECT * FROM user_currency_preferences WHERE user_id = $1",
+      },
+      {
+        key: "categories",
+        sql: "SELECT * FROM categories WHERE user_id = $1 ORDER BY parent_id NULLS FIRST, name",
+      },
+      {
+        key: "payees",
+        sql: "SELECT * FROM payees WHERE user_id = $1 ORDER BY name",
+      },
+      {
+        key: "payee_aliases",
+        sql: "SELECT * FROM payee_aliases WHERE user_id = $1",
+      },
+      {
+        key: "accounts",
+        sql: "SELECT * FROM accounts WHERE user_id = $1 ORDER BY name",
+      },
+      {
+        key: "tags",
+        sql: "SELECT * FROM tags WHERE user_id = $1 ORDER BY name",
+      },
       {
         key: "transactions",
         sql: "SELECT * FROM transactions WHERE user_id = $1 ORDER BY transaction_date, created_at",
@@ -88,7 +118,10 @@ export class BackupService {
               JOIN transactions t ON ts.transaction_id = t.id
               WHERE t.user_id = $1`,
       },
-      { key: "scheduled_transactions", sql: "SELECT * FROM scheduled_transactions WHERE user_id = $1" },
+      {
+        key: "scheduled_transactions",
+        sql: "SELECT * FROM scheduled_transactions WHERE user_id = $1",
+      },
       {
         key: "scheduled_transaction_splits",
         sql: `SELECT sts.* FROM scheduled_transaction_splits sts
@@ -114,7 +147,10 @@ export class BackupService {
               JOIN accounts a ON h.account_id = a.id
               WHERE a.user_id = $1`,
       },
-      { key: "investment_transactions", sql: "SELECT * FROM investment_transactions WHERE user_id = $1" },
+      {
+        key: "investment_transactions",
+        sql: "SELECT * FROM investment_transactions WHERE user_id = $1",
+      },
       { key: "budgets", sql: "SELECT * FROM budgets WHERE user_id = $1" },
       {
         key: "budget_categories",
@@ -135,14 +171,28 @@ export class BackupService {
               JOIN budgets b ON bp.budget_id = b.id
               WHERE b.user_id = $1`,
       },
-      { key: "budget_alerts", sql: "SELECT * FROM budget_alerts WHERE user_id = $1" },
-      { key: "custom_reports", sql: "SELECT * FROM custom_reports WHERE user_id = $1" },
-      { key: "import_column_mappings", sql: "SELECT * FROM import_column_mappings WHERE user_id = $1" },
-      { key: "monthly_account_balances", sql: "SELECT * FROM monthly_account_balances WHERE user_id = $1" },
+      {
+        key: "budget_alerts",
+        sql: "SELECT * FROM budget_alerts WHERE user_id = $1",
+      },
+      {
+        key: "custom_reports",
+        sql: "SELECT * FROM custom_reports WHERE user_id = $1",
+      },
+      {
+        key: "import_column_mappings",
+        sql: "SELECT * FROM import_column_mappings WHERE user_id = $1",
+      },
+      {
+        key: "monthly_account_balances",
+        sql: "SELECT * FROM monthly_account_balances WHERE user_id = $1",
+      },
     ];
 
     // Stream JSON to the response one table at a time to avoid OOM
-    res.write(`{"version":${BACKUP_VERSION},"exportedAt":"${new Date().toISOString()}"`);
+    res.write(
+      `{"version":${BACKUP_VERSION},"exportedAt":"${new Date().toISOString()}"`,
+    );
 
     for (const { key, sql } of tableQueries) {
       const rows = await this.query(sql, [userId]);
@@ -157,16 +207,16 @@ export class BackupService {
 
   async restoreData(
     userId: string,
-    dto: RestoreBackupDto,
+    input: RestoreBackupInput,
   ): Promise<{ message: string; restored: Record<string, number> }> {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException("User not found");
     }
 
-    await this.verifyAuthentication(user, dto);
+    await this.verifyAuthentication(user, input);
 
-    const data = dto.data as unknown as BackupData;
+    const data = this.decompressAndParse(input.compressedData);
     this.validateBackupFormat(data);
 
     this.logger.log(`Starting backup restore for user ${userId}`);
@@ -183,82 +233,160 @@ export class BackupService {
 
       // Phase 2: Insert backup data in FK-safe order
       restored.userPreferences = await this.insertRows(
-        queryRunner, "user_preferences", data.user_preferences, userId,
+        queryRunner,
+        "user_preferences",
+        data.user_preferences,
+        userId,
       );
       restored.userCurrencyPreferences = await this.insertRows(
-        queryRunner, "user_currency_preferences", data.user_currency_preferences, userId,
+        queryRunner,
+        "user_currency_preferences",
+        data.user_currency_preferences,
+        userId,
       );
       restored.categories = await this.insertRows(
-        queryRunner, "categories", data.categories, userId,
+        queryRunner,
+        "categories",
+        data.categories,
+        userId,
       );
       restored.payees = await this.insertRows(
-        queryRunner, "payees", data.payees, userId,
+        queryRunner,
+        "payees",
+        data.payees,
+        userId,
       );
       restored.payeeAliases = await this.insertRows(
-        queryRunner, "payee_aliases", data.payee_aliases, userId,
+        queryRunner,
+        "payee_aliases",
+        data.payee_aliases,
+        userId,
       );
       restored.accounts = await this.insertRows(
-        queryRunner, "accounts", data.accounts, userId,
+        queryRunner,
+        "accounts",
+        data.accounts,
+        userId,
       );
       restored.tags = await this.insertRows(
-        queryRunner, "tags", data.tags, userId,
+        queryRunner,
+        "tags",
+        data.tags,
+        userId,
       );
       restored.scheduledTransactions = await this.insertRows(
-        queryRunner, "scheduled_transactions", data.scheduled_transactions, userId,
+        queryRunner,
+        "scheduled_transactions",
+        data.scheduled_transactions,
+        userId,
       );
       restored.scheduledTransactionSplits = await this.insertRows(
-        queryRunner, "scheduled_transaction_splits", data.scheduled_transaction_splits, null,
+        queryRunner,
+        "scheduled_transaction_splits",
+        data.scheduled_transaction_splits,
+        null,
       );
       restored.scheduledTransactionOverrides = await this.insertRows(
-        queryRunner, "scheduled_transaction_overrides", data.scheduled_transaction_overrides, null,
+        queryRunner,
+        "scheduled_transaction_overrides",
+        data.scheduled_transaction_overrides,
+        null,
       );
       restored.securities = await this.insertRows(
-        queryRunner, "securities", data.securities, userId,
+        queryRunner,
+        "securities",
+        data.securities,
+        userId,
       );
       restored.securityPrices = await this.insertRows(
-        queryRunner, "security_prices", data.security_prices, null,
+        queryRunner,
+        "security_prices",
+        data.security_prices,
+        null,
       );
       restored.holdings = await this.insertRows(
-        queryRunner, "holdings", data.holdings, null,
+        queryRunner,
+        "holdings",
+        data.holdings,
+        null,
       );
       restored.transactions = await this.insertRows(
-        queryRunner, "transactions", data.transactions, userId,
+        queryRunner,
+        "transactions",
+        data.transactions,
+        userId,
       );
       restored.transactionSplits = await this.insertRows(
-        queryRunner, "transaction_splits", data.transaction_splits, null,
+        queryRunner,
+        "transaction_splits",
+        data.transaction_splits,
+        null,
       );
       restored.transactionTags = await this.insertRows(
-        queryRunner, "transaction_tags", data.transaction_tags, null,
+        queryRunner,
+        "transaction_tags",
+        data.transaction_tags,
+        null,
       );
       restored.transactionSplitTags = await this.insertRows(
-        queryRunner, "transaction_split_tags", data.transaction_split_tags, null,
+        queryRunner,
+        "transaction_split_tags",
+        data.transaction_split_tags,
+        null,
       );
       restored.investmentTransactions = await this.insertRows(
-        queryRunner, "investment_transactions", data.investment_transactions, userId,
+        queryRunner,
+        "investment_transactions",
+        data.investment_transactions,
+        userId,
       );
       restored.budgets = await this.insertRows(
-        queryRunner, "budgets", data.budgets, userId,
+        queryRunner,
+        "budgets",
+        data.budgets,
+        userId,
       );
       restored.budgetCategories = await this.insertRows(
-        queryRunner, "budget_categories", data.budget_categories, null,
+        queryRunner,
+        "budget_categories",
+        data.budget_categories,
+        null,
       );
       restored.budgetPeriods = await this.insertRows(
-        queryRunner, "budget_periods", data.budget_periods, null,
+        queryRunner,
+        "budget_periods",
+        data.budget_periods,
+        null,
       );
       restored.budgetPeriodCategories = await this.insertRows(
-        queryRunner, "budget_period_categories", data.budget_period_categories, null,
+        queryRunner,
+        "budget_period_categories",
+        data.budget_period_categories,
+        null,
       );
       restored.budgetAlerts = await this.insertRows(
-        queryRunner, "budget_alerts", data.budget_alerts, userId,
+        queryRunner,
+        "budget_alerts",
+        data.budget_alerts,
+        userId,
       );
       restored.customReports = await this.insertRows(
-        queryRunner, "custom_reports", data.custom_reports, userId,
+        queryRunner,
+        "custom_reports",
+        data.custom_reports,
+        userId,
       );
       restored.importColumnMappings = await this.insertRows(
-        queryRunner, "import_column_mappings", data.import_column_mappings, userId,
+        queryRunner,
+        "import_column_mappings",
+        data.import_column_mappings,
+        userId,
       );
       restored.monthlyAccountBalances = await this.insertRows(
-        queryRunner, "monthly_account_balances", data.monthly_account_balances, userId,
+        queryRunner,
+        "monthly_account_balances",
+        data.monthly_account_balances,
+        userId,
       );
 
       await queryRunner.commitTransaction();
@@ -266,31 +394,59 @@ export class BackupService {
       return { message: "Backup restored successfully", restored };
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      this.logger.error(`Backup restore failed for user ${userId}: ${error.message}`);
+      this.logger.error(
+        `Backup restore failed for user ${userId}: ${error.message}`,
+      );
       throw error;
     } finally {
       await queryRunner.release();
     }
   }
 
-  private async query(sql: string, params: unknown[]): Promise<Record<string, unknown>[]> {
+  private async query(
+    sql: string,
+    params: unknown[],
+  ): Promise<Record<string, unknown>[]> {
     return this.dataSource.query(sql, params);
   }
 
-  private async verifyAuthentication(user: User, dto: RestoreBackupDto): Promise<void> {
+  private decompressAndParse(compressedData: Buffer): BackupData {
+    let json: string;
+    try {
+      const decompressed = gunzipSync(compressedData);
+      json = decompressed.toString("utf-8");
+    } catch {
+      throw new BadRequestException(
+        "Failed to decompress backup file. Ensure the file is gzip-compressed.",
+      );
+    }
+
+    try {
+      return JSON.parse(json) as BackupData;
+    } catch {
+      throw new BadRequestException(
+        "Invalid backup file: decompressed content is not valid JSON",
+      );
+    }
+  }
+
+  private async verifyAuthentication(
+    user: User,
+    input: RestoreBackupInput,
+  ): Promise<void> {
     if (user.authProvider === "oidc") {
-      if (!dto.oidcIdToken) {
+      if (!input.oidcIdToken) {
         throw new UnauthorizedException(
           "OIDC re-authentication is required to confirm restore",
         );
       }
     } else if (user.passwordHash) {
-      if (!dto.password) {
+      if (!input.password) {
         throw new UnauthorizedException(
           "Password is required to confirm restore",
         );
       }
-      const isValid = await bcrypt.compare(dto.password, user.passwordHash);
+      const isValid = await bcrypt.compare(input.password, user.passwordHash);
       if (!isValid) {
         throw new UnauthorizedException("Invalid password");
       }
@@ -299,7 +455,9 @@ export class BackupService {
 
   private validateBackupFormat(data: BackupData): void {
     if (!data || typeof data !== "object") {
-      throw new BadRequestException("Invalid backup format: data must be an object");
+      throw new BadRequestException(
+        "Invalid backup format: data must be an object",
+      );
     }
     if (data.version !== BACKUP_VERSION) {
       throw new BadRequestException(
@@ -307,7 +465,9 @@ export class BackupService {
       );
     }
     if (!data.exportedAt) {
-      throw new BadRequestException("Invalid backup format: missing exportedAt");
+      throw new BadRequestException(
+        "Invalid backup format: missing exportedAt",
+      );
     }
   }
 
@@ -331,13 +491,14 @@ export class BackupService {
        (SELECT id FROM securities WHERE user_id = $1)`,
       [userId],
     );
-    await queryRunner.query(
-      "DELETE FROM securities WHERE user_id = $1",
-      [userId],
-    );
+    await queryRunner.query("DELETE FROM securities WHERE user_id = $1", [
+      userId,
+    ]);
 
     // Budget data
-    await queryRunner.query("DELETE FROM budget_alerts WHERE user_id = $1", [userId]);
+    await queryRunner.query("DELETE FROM budget_alerts WHERE user_id = $1", [
+      userId,
+    ]);
     await queryRunner.query(
       `DELETE FROM budget_period_categories WHERE budget_period_id IN
        (SELECT bp.id FROM budget_periods bp
@@ -379,7 +540,9 @@ export class BackupService {
     );
 
     // Transactions
-    await queryRunner.query("DELETE FROM transactions WHERE user_id = $1", [userId]);
+    await queryRunner.query("DELETE FROM transactions WHERE user_id = $1", [
+      userId,
+    ]);
 
     // Tags
     await queryRunner.query("DELETE FROM tags WHERE user_id = $1", [userId]);
@@ -412,14 +575,23 @@ export class BackupService {
     );
 
     // Custom reports, import mappings
-    await queryRunner.query("DELETE FROM custom_reports WHERE user_id = $1", [userId]);
-    await queryRunner.query("DELETE FROM import_column_mappings WHERE user_id = $1", [userId]);
+    await queryRunner.query("DELETE FROM custom_reports WHERE user_id = $1", [
+      userId,
+    ]);
+    await queryRunner.query(
+      "DELETE FROM import_column_mappings WHERE user_id = $1",
+      [userId],
+    );
 
     // AI data
-    await queryRunner.query("DELETE FROM ai_insights WHERE user_id = $1", [userId]);
+    await queryRunner.query("DELETE FROM ai_insights WHERE user_id = $1", [
+      userId,
+    ]);
 
     // Payees
-    await queryRunner.query("DELETE FROM payee_aliases WHERE user_id = $1", [userId]);
+    await queryRunner.query("DELETE FROM payee_aliases WHERE user_id = $1", [
+      userId,
+    ]);
     await queryRunner.query("DELETE FROM payees WHERE user_id = $1", [userId]);
 
     // Clear account FK references to categories before deleting accounts
@@ -429,14 +601,23 @@ export class BackupService {
     );
 
     // Accounts
-    await queryRunner.query("DELETE FROM accounts WHERE user_id = $1", [userId]);
+    await queryRunner.query("DELETE FROM accounts WHERE user_id = $1", [
+      userId,
+    ]);
 
     // Categories
-    await queryRunner.query("DELETE FROM categories WHERE user_id = $1", [userId]);
+    await queryRunner.query("DELETE FROM categories WHERE user_id = $1", [
+      userId,
+    ]);
 
     // User preferences
-    await queryRunner.query("DELETE FROM user_currency_preferences WHERE user_id = $1", [userId]);
-    await queryRunner.query("DELETE FROM user_preferences WHERE user_id = $1", [userId]);
+    await queryRunner.query(
+      "DELETE FROM user_currency_preferences WHERE user_id = $1",
+      [userId],
+    );
+    await queryRunner.query("DELETE FROM user_preferences WHERE user_id = $1", [
+      userId,
+    ]);
   }
 
   private async insertRows(
@@ -451,18 +632,38 @@ export class BackupService {
 
     // Allowlist of tables that can be restored
     const allowedTables = new Set([
-      "user_preferences", "user_currency_preferences", "categories", "payees",
-      "payee_aliases", "accounts", "tags", "transactions", "transaction_splits",
-      "transaction_tags", "transaction_split_tags", "scheduled_transactions",
-      "scheduled_transaction_splits", "scheduled_transaction_overrides",
-      "securities", "security_prices", "holdings", "investment_transactions",
-      "budgets", "budget_categories", "budget_periods", "budget_period_categories",
-      "budget_alerts", "custom_reports", "import_column_mappings",
+      "user_preferences",
+      "user_currency_preferences",
+      "categories",
+      "payees",
+      "payee_aliases",
+      "accounts",
+      "tags",
+      "transactions",
+      "transaction_splits",
+      "transaction_tags",
+      "transaction_split_tags",
+      "scheduled_transactions",
+      "scheduled_transaction_splits",
+      "scheduled_transaction_overrides",
+      "securities",
+      "security_prices",
+      "holdings",
+      "investment_transactions",
+      "budgets",
+      "budget_categories",
+      "budget_periods",
+      "budget_period_categories",
+      "budget_alerts",
+      "custom_reports",
+      "import_column_mappings",
       "monthly_account_balances",
     ]);
 
     if (!allowedTables.has(table)) {
-      throw new BadRequestException(`Table ${table} is not allowed in backup restore`);
+      throw new BadRequestException(
+        `Table ${table} is not allowed in backup restore`,
+      );
     }
 
     let count = 0;
