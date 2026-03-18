@@ -236,16 +236,32 @@ describe("TransactionTransferService", () => {
       ).rejects.toThrow("Source and destination accounts must be different");
     });
 
-    it("throws when amount is zero or negative", async () => {
-      const zeroDto = { ...baseTransferDto, amount: 0 };
-      await expect(
-        service.createTransfer("user-1", zeroDto, mockFindOne),
-      ).rejects.toThrow(BadRequestException);
-
+    it("throws when amount is negative", async () => {
       const negDto = { ...baseTransferDto, amount: -100 };
       await expect(
         service.createTransfer("user-1", negDto, mockFindOne),
-      ).rejects.toThrow("Transfer amount must be positive");
+      ).rejects.toThrow("Transfer amount must not be negative");
+    });
+
+    it("allows zero amount transfer", async () => {
+      transactionsRepository.save
+        .mockReset()
+        .mockResolvedValueOnce({ id: "from-tx-id" })
+        .mockResolvedValueOnce({ id: "to-tx-id" });
+
+      mockFindOne
+        .mockResolvedValueOnce({ id: "from-tx-id" })
+        .mockResolvedValueOnce({ id: "to-tx-id" });
+
+      const zeroDto = { ...baseTransferDto, amount: 0 };
+      const result = await service.createTransfer(
+        "user-1",
+        zeroDto,
+        mockFindOne,
+      );
+      expect(result).toBeDefined();
+      expect(result.fromTransaction).toBeDefined();
+      expect(result.toTransaction).toBeDefined();
     });
 
     it("uses explicit toAmount when provided", async () => {

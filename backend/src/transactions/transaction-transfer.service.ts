@@ -66,8 +66,8 @@ export class TransactionTransferService {
       );
     }
 
-    if (amount <= 0) {
-      throw new BadRequestException("Transfer amount must be positive");
+    if (amount < 0) {
+      throw new BadRequestException("Transfer amount must not be negative");
     }
 
     const fromAccount = await this.accountsService.findOne(

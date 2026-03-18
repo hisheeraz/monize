@@ -609,14 +609,18 @@ function parseCategoryOrTransfer(value: string): {
 
 /**
  * Extract tag names from a string that starts with / separator.
+ * Quicken separates tags with both / and : (colon) characters.
  * e.g., "/TagA/TagB" -> ["TagA", "TagB"]
+ * e.g., "/TagA:TagB" -> ["TagA", "TagB"]
+ * e.g., "/TagA:TagB/TagC" -> ["TagA", "TagB", "TagC"]
  * e.g., "" -> []
  */
 function extractTagNames(suffix: string): string[] {
   if (!suffix) return [];
-  // Split by / and filter empty strings, strip HTML for XSS safety
+  // Split by / and : to handle both Quicken tag separator formats,
+  // strip HTML for XSS safety
   return suffix
-    .split("/")
+    .split(/[/:]/)
     .map((s) => stripHtml(s.trim()))
     .filter((s) => s.length > 0);
 }
@@ -624,7 +628,9 @@ function extractTagNames(suffix: string): string[] {
 /**
  * Extract category and tag names from a QIF category field.
  * Tags are separated from the category by / (forward slash).
+ * Multiple tags can be separated by / or : (Quicken uses both).
  * e.g., "Food:Groceries/TagA/TagB" -> { category: "Food:Groceries", tagNames: ["TagA", "TagB"] }
+ * e.g., "Food:Groceries/TagA:TagB" -> { category: "Food:Groceries", tagNames: ["TagA", "TagB"] }
  * e.g., "Food/Tag" -> { category: "Food", tagNames: ["Tag"] }
  * e.g., "Food:Groceries" -> { category: "Food:Groceries", tagNames: [] }
  */

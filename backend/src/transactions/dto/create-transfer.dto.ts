@@ -31,9 +31,9 @@ export class CreateTransferDto {
   @IsDateString()
   transactionDate: string;
 
-  @ApiProperty({ description: "Transfer amount (must be positive)" })
+  @ApiProperty({ description: "Transfer amount (must be zero or positive)" })
   @IsNumber({ maxDecimalPlaces: 4 })
-  @Min(0.0001)
+  @Min(0)
   @Max(999999999999)
   amount: number;
 
