@@ -29,10 +29,10 @@ export class UpdateTransferDto {
   @IsDateString()
   transactionDate?: string;
 
-  @ApiPropertyOptional({ description: "Transfer amount (must be positive)" })
+  @ApiPropertyOptional({ description: "Transfer amount (must be zero or positive)" })
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 4 })
-  @Min(0.0001)
+  @Min(0)
   @Max(999999999999)
   amount?: number;
 
@@ -57,7 +57,7 @@ export class UpdateTransferDto {
   @ApiPropertyOptional({ description: "Destination amount" })
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 4 })
-  @Min(0.0001)
+  @Min(0)
   @Max(999999999999)
   toAmount?: number;
 

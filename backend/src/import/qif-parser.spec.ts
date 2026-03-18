@@ -1353,6 +1353,43 @@ LFood:Groceries/Weekly/Essential
       expect(tx.tagNames).toEqual(["Weekly", "Essential"]);
     });
 
+    it("extracts colon-separated multiple tags from category field", () => {
+      const qif = `!Type:Bank
+D01/15/2026
+T-50.00
+LFood:Groceries/Weekly:Essential
+^`;
+      const result = parseQif(qif);
+      const tx = result.transactions[0];
+      expect(tx.category).toBe("Food:Groceries");
+      expect(tx.tagNames).toEqual(["Weekly", "Essential"]);
+    });
+
+    it("extracts mixed slash and colon separated tags", () => {
+      const qif = `!Type:Bank
+D01/15/2026
+T-50.00
+LFood:Groceries/Weekly:Essential/Organic
+^`;
+      const result = parseQif(qif);
+      const tx = result.transactions[0];
+      expect(tx.category).toBe("Food:Groceries");
+      expect(tx.tagNames).toEqual(["Weekly", "Essential", "Organic"]);
+    });
+
+    it("extracts colon-separated tags from transfer category", () => {
+      const qif = `!Type:Bank
+D01/15/2026
+T-500.00
+L[Savings Account]/Monthly:Recurring
+^`;
+      const result = parseQif(qif);
+      const tx = result.transactions[0];
+      expect(tx.isTransfer).toBe(true);
+      expect(tx.transferAccount).toBe("Savings Account");
+      expect(tx.tagNames).toEqual(["Monthly", "Recurring"]);
+    });
+
     it("extracts tags from top-level category (no subcategory)", () => {
       const qif = `!Type:Bank
 D01/15/2026
@@ -1405,6 +1442,23 @@ $-40.00
       expect(tx.splits[0].tagNames).toEqual(["Weekly"]);
       expect(tx.splits[1].category).toBe("Household");
       expect(tx.splits[1].tagNames).toEqual(["Monthly"]);
+    });
+
+    it("extracts colon-separated tags from split categories", () => {
+      const qif = `!Type:Bank
+D01/15/2026
+T-100.00
+SFood:Groceries/Weekly:Essential
+$-60.00
+SHousehold/Monthly:Recurring
+$-40.00
+^`;
+      const result = parseQif(qif);
+      const tx = result.transactions[0];
+      expect(tx.splits[0].category).toBe("Food:Groceries");
+      expect(tx.splits[0].tagNames).toEqual(["Weekly", "Essential"]);
+      expect(tx.splits[1].category).toBe("Household");
+      expect(tx.splits[1].tagNames).toEqual(["Monthly", "Recurring"]);
     });
 
     it("does not include tag portion in extracted categories list", () => {
@@ -1756,6 +1810,23 @@ LFood/Weekly
       const tx = result.accountBlocks[0].transactions[0];
       expect(tx.category).toBe("Food");
       expect(tx.tagNames).toEqual(["Weekly"]);
+    });
+
+    it("handles colon-separated tags in multi-account transactions", () => {
+      const qif = `!Account
+NChecking
+TBank
+^
+!Type:Bank
+D01/15/2026
+T-50.00
+LFood:Groceries/Weekly:Essential
+^
+`;
+      const result = parseQifFull(qif, "MM/DD/YYYY");
+      const tx = result.accountBlocks[0].transactions[0];
+      expect(tx.category).toBe("Food:Groceries");
+      expect(tx.tagNames).toEqual(["Weekly", "Essential"]);
     });
 
     it("handles split transactions in multi-account", () => {

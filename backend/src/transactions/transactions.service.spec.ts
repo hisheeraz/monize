@@ -851,7 +851,7 @@ describe("TransactionsService", () => {
       ).rejects.toThrow("Source and destination accounts must be different");
     });
 
-    it("throws when amount is not positive", async () => {
+    it("throws when amount is negative", async () => {
       await expect(
         service.createTransfer("user-1", {
           fromAccountId: "account-1",
@@ -860,7 +860,7 @@ describe("TransactionsService", () => {
           amount: -100,
           fromCurrencyCode: "USD",
         } as any),
-      ).rejects.toThrow("Transfer amount must be positive");
+      ).rejects.toThrow("Transfer amount must not be negative");
     });
 
     it("sets tags on both transfer transactions when tagIds provided", async () => {

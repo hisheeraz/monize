@@ -601,8 +601,8 @@ export function TransactionForm({ transaction, defaultAccountId, onSuccess, onCa
           setIsLoading(false);
           return;
         }
-        if (!data.amount || data.amount <= 0) {
-          toast.error('Transfer amount must be positive');
+        if (data.amount === undefined || data.amount === null || data.amount < 0) {
+          toast.error('Transfer amount must not be negative');
           setIsLoading(false);
           return;
         }
