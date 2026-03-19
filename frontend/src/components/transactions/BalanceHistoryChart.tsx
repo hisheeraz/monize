@@ -100,11 +100,29 @@ export function BalanceHistoryChart({
     if (chartData.length === 0) return null;
     const startBalance = chartData[0].balance;
     const endBalance = chartData[chartData.length - 1].balance;
+
+    // Find balance as of today (last data point on or before today)
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    let currentBalance = endBalance;
+    for (let i = chartData.length - 1; i >= 0; i--) {
+      if (chartData[i].date <= todayStr) {
+        currentBalance = chartData[i].balance;
+        break;
+      }
+      if (i === 0) {
+        // All data points are in the future
+        currentBalance = startBalance;
+      }
+    }
+
+    const hasFutureData = chartData[chartData.length - 1].date > todayStr;
+
     let minBalance = startBalance;
     for (const point of chartData) {
       if (point.balance < minBalance) minBalance = point.balance;
     }
-    return { startBalance, endBalance, minBalance, goesNegative: minBalance < 0 };
+    return { startBalance, currentBalance, endBalance, hasFutureData, minBalance, goesNegative: minBalance < 0 };
   }, [chartData]);
 
   if (isLoading) {
@@ -192,7 +210,7 @@ export function BalanceHistoryChart({
 
       {/* Summary footer */}
       {summary && (
-        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 grid grid-cols-3 gap-4 text-center">
+        <div className={`mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 grid ${summary.hasFutureData ? 'grid-cols-4' : 'grid-cols-3'} gap-4 text-center`}>
           <div>
             <div className="text-sm text-gray-500 dark:text-gray-400">Starting</div>
             <div
@@ -209,14 +227,28 @@ export function BalanceHistoryChart({
             <div className="text-sm text-gray-500 dark:text-gray-400">Current</div>
             <div
               className={`font-semibold ${
-                summary.endBalance >= 0
+                summary.currentBalance >= 0
                   ? 'text-green-600 dark:text-green-400'
                   : 'text-red-600 dark:text-red-400'
               }`}
             >
-              {formatCurrency(summary.endBalance)}
+              {formatCurrency(summary.currentBalance)}
             </div>
           </div>
+          {summary.hasFutureData && (
+            <div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Ending</div>
+              <div
+                className={`font-semibold ${
+                  summary.endBalance >= 0
+                    ? 'text-blue-600 dark:text-blue-400'
+                    : 'text-red-600 dark:text-red-400'
+                }`}
+              >
+                {formatCurrency(summary.endBalance)}
+              </div>
+            </div>
+          )}
           <div>
             <div className="text-sm text-gray-500 dark:text-gray-400">
               {summary.goesNegative ? 'Lowest' : 'Min Balance'}

@@ -75,6 +75,66 @@ describe('BalanceHistoryChart', () => {
     expect(screen.getByText('!')).toBeInTheDocument();
   });
 
+  it('shows Ending balance when future transactions exist', () => {
+    render(
+      <BalanceHistoryChart
+        data={[
+          { date: '2026-01-01', balance: 1000 },
+          { date: '2026-03-19', balance: 800 },
+          { date: '2026-04-15', balance: 650 },
+          { date: '2026-05-01', balance: 500 },
+        ]}
+        isLoading={false}
+      />
+    );
+
+    expect(screen.getByText('Starting')).toBeInTheDocument();
+    expect(screen.getByText('Current')).toBeInTheDocument();
+    expect(screen.getByText('Ending')).toBeInTheDocument();
+    expect(screen.getByText('Min Balance')).toBeInTheDocument();
+  });
+
+  it('does not show Ending balance when no future transactions', () => {
+    render(
+      <BalanceHistoryChart
+        data={[
+          { date: '2025-01-01', balance: 1000 },
+          { date: '2025-06-01', balance: 750 },
+          { date: '2025-12-31', balance: 900 },
+        ]}
+        isLoading={false}
+      />
+    );
+
+    expect(screen.getByText('Starting')).toBeInTheDocument();
+    expect(screen.getByText('Current')).toBeInTheDocument();
+    expect(screen.queryByText('Ending')).not.toBeInTheDocument();
+  });
+
+  it('shows Current as today balance and Ending as last future data point', () => {
+    // All values must be unique to avoid getByText collisions
+    // Data: start=2000, dip=1500, current(today)=1800, ending=1900
+    // Min balance = 1500
+    render(
+      <BalanceHistoryChart
+        data={[
+          { date: '2026-03-01', balance: 2000 },
+          { date: '2026-03-10', balance: 1500 },
+          { date: '2026-03-15', balance: 1800 },
+          { date: '2026-04-01', balance: 1900 },
+        ]}
+        isLoading={false}
+      />
+    );
+
+    expect(screen.getByText('Ending')).toBeInTheDocument();
+    // Starting = 2000, Current = 1800 (today or before), Ending = 1900, Min = 1500
+    expect(screen.getByText('$2000')).toBeInTheDocument();
+    expect(screen.getByText('$1800')).toBeInTheDocument();
+    expect(screen.getByText('$1900')).toBeInTheDocument();
+    expect(screen.getByText('$1500')).toBeInTheDocument();
+  });
+
   it('passes currencyCode to formatting functions', () => {
     mockFormatCurrencyCompact.mockClear();
 
