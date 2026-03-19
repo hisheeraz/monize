@@ -1413,8 +1413,6 @@ describe("ImportRegularProcessorService", () => {
 
       // Track the savedTx id assigned during processTransaction
       let savedTxId: string | null = null;
-      const linkedTxId: string | null = null;
-      const originalCreate = ctx.queryRunner.manager.create;
       let createCallIndex = 0;
       ctx.queryRunner.manager.create = jest
         .fn()
@@ -1436,9 +1434,7 @@ describe("ImportRegularProcessorService", () => {
       // Then for S2's processSplitTransfer:
       // 6. existingLinkedTx query -> should NOT match L1 because L1.linkedTransactionId = savedTx.id
       // 7. pendingTransfer query -> null
-      let qbCallCount = 0;
       ctx.queryRunner.manager.createQueryBuilder.mockImplementation(() => {
-        qbCallCount++;
         return makeMockQueryBuilder(null);
       });
 
@@ -1515,9 +1511,7 @@ describe("ImportRegularProcessorService", () => {
       // For the existingLinkedTx query, we simulate finding a transaction
       // whose linkedTransactionId equals savedTx.id (created by a prior split).
       // The fix should filter this out via the andWhere condition.
-      let qbCallCount = 0;
       ctx.queryRunner.manager.createQueryBuilder.mockImplementation(() => {
-        qbCallCount++;
         const qb = makeMockQueryBuilder(null);
         // Track andWhere calls to verify the new filter is applied
         const andWhereCalls: string[] = [];
