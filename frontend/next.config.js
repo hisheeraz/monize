@@ -5,6 +5,7 @@ const nextConfig = {
   reactStrictMode: true,
   output: 'standalone', // Optimized for Docker deployment
   poweredByHeader: false, // Remove X-Powered-By: Next.js header
+  serverExternalPackages: ['jspdf'],
   env: {
     PUBLIC_APP_URL: process.env.PUBLIC_APP_URL || 'http://localhost:3000',
     NEXT_PUBLIC_APP_VERSION: packageJson.version,

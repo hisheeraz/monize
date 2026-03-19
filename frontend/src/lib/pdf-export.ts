@@ -3,7 +3,7 @@
  * Generates professional financial report PDFs with charts and/or tables.
  */
 
-import { jsPDF } from 'jspdf';
+import type { jsPDF } from 'jspdf';
 import { captureSvgAsImage } from './pdf-export-charts';
 import { addTableToPdf } from './pdf-export-tables';
 
@@ -33,7 +33,8 @@ export async function exportToPdf(options: PdfExportOptions): Promise<void> {
 
   // Use landscape for chart-only or chart+table, portrait for table-only
   const orientation = hasChart ? 'landscape' : 'portrait';
-  const doc = new jsPDF({ orientation, unit: 'mm', format: 'a4' });
+  const { jsPDF: JsPDF } = await import('jspdf');
+  const doc = new JsPDF({ orientation, unit: 'mm', format: 'a4' });
 
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 14;
