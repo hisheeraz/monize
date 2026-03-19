@@ -255,7 +255,13 @@ describe("TransactionsService", () => {
       ).rejects.toThrow("Split amounts");
     });
 
-    it("rejects splits with zero amount", async () => {
+    it("allows splits with zero amount when total matches", async () => {
+      transactionsRepository.findOne.mockResolvedValue({
+        id: "tx-1",
+        userId: "user-1",
+        splits: [],
+      });
+
       await expect(
         service.create("user-1", {
           accountId: "account-1",
@@ -267,7 +273,7 @@ describe("TransactionsService", () => {
             { amount: -100, categoryId: "cat-2" },
           ],
         } as any),
-      ).rejects.toThrow("Split amounts cannot be zero");
+      ).resolves.toBeDefined();
     });
 
     it("allows single split for transfers (with transferAccountId)", async () => {
