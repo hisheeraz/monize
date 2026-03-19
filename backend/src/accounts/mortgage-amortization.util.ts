@@ -436,3 +436,42 @@ export function recalculateMortgageAfterRateChange(
     interestPayment: result.interestPayment,
   };
 }
+
+/**
+ * Calculate the principal/interest split for a mortgage payment based on remaining balance.
+ *
+ * Unlike loan payment splits which use simple monthly compounding, this handles
+ * Canadian fixed-rate semi-annual compounding and other mortgage-specific rates.
+ */
+export function calculateMortgagePaymentSplit(
+  remainingBalance: number,
+  annualRate: number,
+  paymentAmount: number,
+  frequency: MortgagePaymentFrequency,
+  isCanadian: boolean,
+  isVariableRate: boolean,
+): { principal: number; interest: number } {
+  const periodsPerYear = getMortgagePeriodsPerYear(frequency);
+  const periodicRate = getPeriodicRate(
+    annualRate,
+    periodsPerYear,
+    isCanadian,
+    isVariableRate,
+  );
+
+  const interest = remainingBalance * periodicRate;
+  let principal = paymentAmount - interest;
+
+  if (principal < 0) {
+    principal = 0;
+  }
+
+  if (principal > remainingBalance) {
+    principal = remainingBalance;
+  }
+
+  return {
+    principal: Math.round(principal * 100) / 100,
+    interest: Math.round(interest * 100) / 100,
+  };
+}

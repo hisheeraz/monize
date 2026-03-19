@@ -340,6 +340,71 @@ describe("ScheduledTransactionLoanService", () => {
       // Principal = -(500 - 100) = -400
       expect(principalSave[0].amount).toBe(-400);
     });
+
+    it("should use mortgage-specific rate calculation for MORTGAGE accounts", async () => {
+      // Canadian fixed-rate mortgage uses semi-annual compounding
+      // $200,000 at 6%, monthly: periodic rate = ((1 + 0.03)^(2/12)) - 1 = ~0.004938...
+      // Interest = 200000 * 0.004938... = ~987.65
+      const mortgageAccount = makeLoanAccount({
+        accountType: "MORTGAGE" as any,
+        currentBalance: -200000,
+        interestRate: 6,
+        paymentFrequency: "MONTHLY",
+        isCanadianMortgage: true,
+        isVariableRate: false,
+      });
+      accountsRepository.findOne.mockResolvedValue(mortgageAccount);
+
+      const scheduledTx = makeScheduledTransaction({ amount: -1500 });
+      scheduledTransactionsRepository.findOne.mockResolvedValue(scheduledTx);
+
+      await service.recalculateLoanPaymentSplits(
+        scheduledTransactionId,
+        loanAccountId,
+      );
+
+      expect(splitsRepository.save).toHaveBeenCalledTimes(2);
+
+      const interestSave = splitsRepository.save.mock.calls.find(
+        (call: any) => call[0].categoryId === "cat-interest",
+      );
+      // Canadian semi-annual compounding: interest should be ~987.65, not 1000.00 (simple monthly)
+      expect(interestSave[0].amount).not.toBe(-1000);
+      expect(interestSave[0].amount).toBeCloseTo(-987.65, 0);
+    });
+
+    it("should use standard rate calculation for non-Canadian MORTGAGE accounts", async () => {
+      // Non-Canadian mortgage: standard monthly compounding, same as loans
+      // $200,000 at 6%, monthly: rate = 0.06/12 = 0.005
+      // Interest = 200000 * 0.005 = 1000.00
+      const mortgageAccount = makeLoanAccount({
+        accountType: "MORTGAGE" as any,
+        currentBalance: -200000,
+        interestRate: 6,
+        paymentFrequency: "MONTHLY",
+        isCanadianMortgage: false,
+        isVariableRate: false,
+      });
+      accountsRepository.findOne.mockResolvedValue(mortgageAccount);
+
+      const scheduledTx = makeScheduledTransaction({ amount: -1500 });
+      scheduledTransactionsRepository.findOne.mockResolvedValue(scheduledTx);
+
+      await service.recalculateLoanPaymentSplits(
+        scheduledTransactionId,
+        loanAccountId,
+      );
+
+      const interestSave = splitsRepository.save.mock.calls.find(
+        (call: any) => call[0].categoryId === "cat-interest",
+      );
+      expect(interestSave[0].amount).toBe(-1000);
+
+      const principalSave = splitsRepository.save.mock.calls.find(
+        (call: any) => call[0].transferAccountId === loanAccountId,
+      );
+      expect(principalSave[0].amount).toBe(-500);
+    });
   });
 
   describe("findLoanAccountFromSplits", () => {
@@ -375,7 +440,7 @@ describe("ScheduledTransactionLoanService", () => {
       expect(result).toBeNull();
     });
 
-    it("should return null when transfer account is not a LOAN type", async () => {
+    it("should return null when transfer account is not a LOAN or MORTGAGE type", async () => {
       const splits = [
         {
           id: "split-1",
@@ -391,6 +456,24 @@ describe("ScheduledTransactionLoanService", () => {
       const result = await service.findLoanAccountFromSplits(splits);
 
       expect(result).toBeNull();
+    });
+
+    it("should return mortgage account ID when found in splits", async () => {
+      const splits = [
+        {
+          id: "split-1",
+          transferAccountId: "acc-mortgage-1",
+        } as ScheduledTransactionSplit,
+      ];
+
+      accountsRepository.findOne.mockResolvedValue({
+        id: "acc-mortgage-1",
+        accountType: "MORTGAGE",
+      });
+
+      const result = await service.findLoanAccountFromSplits(splits);
+
+      expect(result).toBe("acc-mortgage-1");
     });
 
     it("should return null when transfer account is not found", async () => {

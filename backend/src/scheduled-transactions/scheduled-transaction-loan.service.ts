@@ -8,6 +8,10 @@ import {
   calculatePaymentSplit,
   PaymentFrequency,
 } from "../accounts/loan-amortization.util";
+import {
+  calculateMortgagePaymentSplit,
+  MortgagePaymentFrequency,
+} from "../accounts/mortgage-amortization.util";
 
 @Injectable()
 export class ScheduledTransactionLoanService {
@@ -57,12 +61,25 @@ export class ScheduledTransactionLoanService {
     const frequency = (loanAccount.paymentFrequency ||
       scheduledTransaction.frequency) as PaymentFrequency;
 
-    const newSplit = calculatePaymentSplit(
-      currentBalance,
-      interestRate,
-      paymentAmount,
-      frequency,
-    );
+    let newSplit: { principal: number; interest: number };
+
+    if (loanAccount.accountType === "MORTGAGE") {
+      newSplit = calculateMortgagePaymentSplit(
+        currentBalance,
+        interestRate,
+        paymentAmount,
+        frequency as MortgagePaymentFrequency,
+        loanAccount.isCanadianMortgage,
+        loanAccount.isVariableRate,
+      );
+    } else {
+      newSplit = calculatePaymentSplit(
+        currentBalance,
+        interestRate,
+        paymentAmount,
+        frequency,
+      );
+    }
 
     const splits = scheduledTransaction.splits || [];
     const principalSplit = splits.find(
@@ -91,7 +108,11 @@ export class ScheduledTransactionLoanService {
         const account = await this.accountsRepository.findOne({
           where: { id: split.transferAccountId },
         });
-        if (account && account.accountType === "LOAN") {
+        if (
+          account &&
+          (account.accountType === "LOAN" ||
+            account.accountType === "MORTGAGE")
+        ) {
           return account.id;
         }
       }
