@@ -702,6 +702,20 @@ export function TransactionForm({ transaction, defaultAccountId, onSuccess, onCa
 
   useFormSubmitRef(submitRef, handleSubmit, onSubmit);
 
+  const createdAtSlot = showCreatedAt && transaction ? (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+        Create Date
+      </label>
+      <input
+        type="datetime-local"
+        value={createdAtValue}
+        onChange={(e) => setCreatedAtValue(e.target.value)}
+        className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
+      />
+    </div>
+  ) : undefined;
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       {/* Mode selector - only show for new transactions or if not already a transfer being edited */}
@@ -774,6 +788,7 @@ export function TransactionForm({ transaction, defaultAccountId, onSuccess, onCa
           handleAmountChange={handleAmountChange}
           handleModeChange={handleModeChange}
           transaction={transaction}
+          createdAtSlot={createdAtSlot}
         />
       )}
 
@@ -791,6 +806,7 @@ export function TransactionForm({ transaction, defaultAccountId, onSuccess, onCa
           handlePayeeCreate={handlePayeeCreate}
           handleAmountChange={handleSplitTotalChange}
           transaction={transaction}
+          createdAtSlot={createdAtSlot}
         />
       )}
 
@@ -814,6 +830,7 @@ export function TransactionForm({ transaction, defaultAccountId, onSuccess, onCa
           crossCurrencyInfo={crossCurrencyInfo}
           payees={payees}
           transaction={transaction}
+          createdAtSlot={createdAtSlot}
         />
       )}
 
@@ -895,21 +912,6 @@ export function TransactionForm({ transaction, defaultAccountId, onSuccess, onCa
         ]}
         {...register('status')}
       />
-
-      {/* Created Date - only shown when editing and preference is enabled */}
-      {showCreatedAt && transaction && (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Created Date
-          </label>
-          <input
-            type="datetime-local"
-            value={createdAtValue}
-            onChange={(e) => setCreatedAtValue(e.target.value)}
-            className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
-          />
-        </div>
-      )}
 
       {/* Actions */}
       <FormActions onCancel={onCancel} submitLabel={`${transaction ? 'Update' : 'Create'} ${mode === 'transfer' ? 'Transfer' : 'Transaction'}`} isSubmitting={isLoading} />

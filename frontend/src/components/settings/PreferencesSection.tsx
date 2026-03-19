@@ -165,7 +165,7 @@ export function PreferencesSection({ preferences, onPreferencesUpdated }: Prefer
             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 dark:border-gray-600 rounded"
           />
           <label htmlFor="showCreatedAt" className="ml-2 block text-sm text-gray-900 dark:text-gray-100">
-            Show Created Date in transaction forms
+            Show Create Date in transaction forms
           </label>
         </div>
       </div>
