@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent, act } from '@/test/render';
+import { render, screen, waitFor, fireEvent } from '@/test/render';
 import TransactionsPage from './page';
 
 // Mock next/image
@@ -1095,9 +1095,7 @@ describe('TransactionsPage', () => {
 
   describe('Export', () => {
     it('renders the export button', async () => {
-      await act(async () => {
-        render(<TransactionsPage />);
-      });
+      render(<TransactionsPage />);
 
       await waitFor(() => {
         expect(screen.getByTestId('export-btn')).toBeInTheDocument();
@@ -1117,18 +1115,13 @@ describe('TransactionsPage', () => {
         startingBalance: 5000,
       });
 
-      await act(async () => {
-        render(<TransactionsPage />);
-      });
+      render(<TransactionsPage />);
 
-      // Wait for initial load to complete
       await waitFor(() => {
         expect(screen.getByTestId('tx-count')).toHaveTextContent('2 transactions');
       });
 
-      await act(async () => {
-        fireEvent.click(screen.getByTestId('export-btn'));
-      });
+      fireEvent.click(screen.getByTestId('export-btn'));
 
       await waitFor(() => {
         expect(mockExportToCsv).toHaveBeenCalledTimes(1);
@@ -1158,17 +1151,13 @@ describe('TransactionsPage', () => {
         return Promise.resolve({ data: page1Transactions, pagination: { page: 1, totalPages: 2, total: 2 }, startingBalance: 5000 });
       });
 
-      await act(async () => {
-        render(<TransactionsPage />);
-      });
+      render(<TransactionsPage />);
 
       await waitFor(() => {
         expect(screen.getByTestId('tx-count')).toHaveTextContent('1 transactions');
       });
 
-      await act(async () => {
-        fireEvent.click(screen.getByTestId('export-btn'));
-      });
+      fireEvent.click(screen.getByTestId('export-btn'));
 
       await waitFor(() => {
         expect(mockExportToCsv).toHaveBeenCalledTimes(1);
@@ -1187,17 +1176,13 @@ describe('TransactionsPage', () => {
         startingBalance: 0,
       });
 
-      await act(async () => {
-        render(<TransactionsPage />);
-      });
+      render(<TransactionsPage />);
 
       await waitFor(() => {
         expect(screen.getByTestId('export-btn')).toBeInTheDocument();
       });
 
-      await act(async () => {
-        fireEvent.click(screen.getByTestId('export-btn'));
-      });
+      fireEvent.click(screen.getByTestId('export-btn'));
 
       await waitFor(() => {
         expect(toast.default.error).toHaveBeenCalledWith('No transactions to export');
@@ -1216,9 +1201,7 @@ describe('TransactionsPage', () => {
         startingBalance: 5000,
       });
 
-      await act(async () => {
-        render(<TransactionsPage />);
-      });
+      render(<TransactionsPage />);
 
       await waitFor(() => {
         expect(screen.getByTestId('tx-count')).toHaveTextContent('3 transactions');
@@ -1227,9 +1210,7 @@ describe('TransactionsPage', () => {
       // Now make next call fail (the export call)
       mockGetAll.mockRejectedValueOnce(new Error('Network error'));
 
-      await act(async () => {
-        fireEvent.click(screen.getByTestId('export-btn'));
-      });
+      fireEvent.click(screen.getByTestId('export-btn'));
 
       await waitFor(() => {
         expect(showErrorToast).toHaveBeenCalledWith(expect.any(Error), 'Failed to export transactions');
@@ -1249,17 +1230,13 @@ describe('TransactionsPage', () => {
         startingBalance: 5000,
       });
 
-      await act(async () => {
-        render(<TransactionsPage />);
-      });
+      render(<TransactionsPage />);
 
       await waitFor(() => {
         expect(screen.getByTestId('tx-count')).toHaveTextContent('1 transactions');
       });
 
-      await act(async () => {
-        fireEvent.click(screen.getByTestId('export-btn'));
-      });
+      fireEvent.click(screen.getByTestId('export-btn'));
 
       await waitFor(() => {
         expect(mockExportToCsv).toHaveBeenCalledTimes(1);
@@ -1281,17 +1258,13 @@ describe('TransactionsPage', () => {
         startingBalance: 0,
       });
 
-      await act(async () => {
-        render(<TransactionsPage />);
-      });
+      render(<TransactionsPage />);
 
       await waitFor(() => {
         expect(screen.getByTestId('tx-count')).toHaveTextContent('1 transactions');
       });
 
-      await act(async () => {
-        fireEvent.click(screen.getByTestId('export-btn'));
-      });
+      fireEvent.click(screen.getByTestId('export-btn'));
 
       await waitFor(() => {
         expect(mockExportToCsv).toHaveBeenCalledTimes(1);
